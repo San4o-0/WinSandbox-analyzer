@@ -79,13 +79,11 @@ def run_sandbox(session, progress=None):
     if shutil.which("WindowsSandbox.exe") is None and not os.path.exists(
         r"C:\Windows\System32\WindowsSandbox.exe"
     ):
-        raise SandboxError(
-            "Windows Sandbox не знайдено. Увімкніть компонент 'Windows Sandbox'."
-        )
+        raise SandboxError("err_sandbox_missing")
 
-    _log(f"Запуск пісочниці для сесії {session['id']}")
+    _log(f"Sandbox start for session {session['id']}")
     if progress:
-        progress("Запуск Windows Sandbox...")
+        progress("sandbox_start")
 
     try:
         subprocess.Popen(["WindowsSandbox.exe", session["wsb"]])
@@ -97,7 +95,7 @@ def run_sandbox(session, progress=None):
     report_path = session["report"]
     deadline = time.time() + config.REPORT_TIMEOUT_SECONDS
     if progress:
-        progress("Аналіз у віртуальному середовищі...")
+        progress("sandbox_analyzing")
 
     while time.time() < deadline:
         if os.path.exists(report_path):
@@ -105,7 +103,7 @@ def run_sandbox(session, progress=None):
             try:
                 with open(report_path, "r", encoding="utf-8-sig") as f:
                     report = json.load(f)
-                _log(f"Звіт отримано для сесії {session['id']}")
+                _log(f"Report received for session {session['id']}")
                 _close_sandbox()
                 return report
             except (json.JSONDecodeError, OSError):
@@ -114,7 +112,7 @@ def run_sandbox(session, progress=None):
         time.sleep(3)
 
     _close_sandbox()
-    raise SandboxError("Час очікування звіту вичерпано.")
+    raise SandboxError("err_report_timeout")
 
 
 def _close_sandbox():

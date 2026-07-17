@@ -5,7 +5,9 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
 
+import app_settings
 import config
+import i18n
 import sandbox_manager
 import static_analysis
 import verdict
@@ -18,93 +20,137 @@ except ImportError:
     DND_AVAILABLE = False
 
 
-BG = "#0f1115"
-SURFACE = "#171a21"
-SURFACE_HOVER = "#1d222c"
-BORDER = "#2a2f3a"
-ACCENT = "#4f8cff"
-ACCENT_DARK = "#3d74e0"
-TEXT = "#e8ebf1"
-MUTED = "#8b93a3"
-REPORT_FG = "#c9d1de"
+THEMES = {
+    "dark": {
+        "bg": "#0f1115",
+        "surface": "#171a21",
+        "surface_hover": "#1d222c",
+        "border": "#2a2f3a",
+        "accent": "#4f8cff",
+        "accent_dark": "#3d74e0",
+        "text": "#e8ebf1",
+        "muted": "#8b93a3",
+        "report_fg": "#c9d1de",
+        "scroll_active": "#3a4150",
+    },
+    "light": {
+        "bg": "#f2f4f8",
+        "surface": "#ffffff",
+        "surface_hover": "#f6f8fc",
+        "border": "#d9dee7",
+        "accent": "#3b76e8",
+        "accent_dark": "#2f61c4",
+        "text": "#1a1f29",
+        "muted": "#697182",
+        "report_fg": "#3a4250",
+        "scroll_active": "#c3cad6",
+    },
+}
 
 LEVEL_COLORS = {
-    "Чистий": "#22c55e",
-    "Підозрілий": "#f59e0b",
-    "Небезпечний": "#ef4444",
+    "clean": "#22c55e",
+    "suspicious": "#f59e0b",
+    "dangerous": "#ef4444",
 }
 
 LEVEL_TEXT_COLORS = {
-    "Чистий": "#06301a",
-    "Підозрілий": "#3b2703",
-    "Небезпечний": "#ffffff",
+    "clean": "#06301a",
+    "suspicious": "#3b2703",
+    "dangerous": "#ffffff",
 }
 
 
 class FileCheckerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("FileChecker — перевірка файлів у пісочниці")
-        self.root.geometry("860x680")
-        self.root.minsize(760, 560)
-        self.root.configure(bg=BG)
+        self.settings = app_settings.load()
         self.msg_queue = queue.Queue()
         self.busy = False
+        self.current_verdict = None
+        self.status_key = "ready"
+        self.settings_win = None
+        self.root.geometry("860x680")
+        self.root.minsize(760, 560)
         self._build_ui()
         self.root.after(100, self._poll_queue)
 
+    @property
+    def C(self):
+        return THEMES[self.settings["theme"]]
+
+    def t(self, key, **params):
+        return i18n.t(self.settings["language"], key, **params)
+
     def _build_ui(self):
-        header = tk.Frame(self.root, bg=BG)
+        C = self.C
+        self.root.title(self.t("app_title"))
+        self.root.configure(bg=C["bg"])
+
+        header = tk.Frame(self.root, bg=C["bg"])
         header.pack(fill="x", padx=24, pady=(20, 12))
         tk.Label(
             header,
-            text="FileChecker",
-            bg=BG,
-            fg=TEXT,
+            text=self.t("app_name"),
+            bg=C["bg"],
+            fg=C["text"],
             font=("Segoe UI", 18, "bold"),
         ).pack(side="left")
         tk.Label(
             header,
-            text="перевірка файлів у пісочниці",
-            bg=BG,
-            fg=MUTED,
+            text=self.t("subtitle"),
+            bg=C["bg"],
+            fg=C["muted"],
             font=("Segoe UI", 10),
         ).pack(side="left", padx=(12, 0), pady=(7, 0))
+        tk.Button(
+            header,
+            text="⚙",
+            command=self._open_settings,
+            bg=C["bg"],
+            fg=C["muted"],
+            activebackground=C["bg"],
+            activeforeground=C["text"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2",
+            font=("Segoe UI", 14),
+        ).pack(side="right")
 
-        top = tk.Frame(self.root, bg=BG)
+        top = tk.Frame(self.root, bg=C["bg"])
         top.pack(fill="x", padx=24)
 
         self.drop_zone = tk.Frame(
             top,
-            bg=SURFACE,
+            bg=C["surface"],
             bd=0,
             highlightthickness=1,
-            highlightbackground=BORDER,
-            highlightcolor=BORDER,
+            highlightbackground=C["border"],
+            highlightcolor=C["border"],
         )
         self.drop_zone.pack(fill="x")
 
         self._zone_icon = tk.Label(
             self.drop_zone,
             text="⬇",
-            bg=SURFACE,
-            fg=ACCENT,
+            bg=C["surface"],
+            fg=C["accent"],
             font=("Segoe UI", 26, "bold"),
         )
         self._zone_icon.pack(pady=(28, 2))
         self._zone_hint = tk.Label(
             self.drop_zone,
-            text="Перетягніть файл сюди",
-            bg=SURFACE,
-            fg=TEXT,
+            text=self.t("drop_hint"),
+            bg=C["surface"],
+            fg=C["text"],
             font=("Segoe UI", 12, "bold"),
         )
         self._zone_hint.pack()
         self._zone_sub = tk.Label(
             self.drop_zone,
-            text="або натисніть «Обрати файл»",
-            bg=SURFACE,
-            fg=MUTED,
+            text=self.t("drop_sub"),
+            bg=C["surface"],
+            fg=C["muted"],
             font=("Segoe UI", 10),
         )
         self._zone_sub.pack(pady=(4, 28))
@@ -124,17 +170,17 @@ class FileCheckerApp:
                 widget.drop_target_register(DND_FILES)
                 widget.dnd_bind("<<Drop>>", self._on_drop)
 
-        btns = tk.Frame(top, bg=BG)
+        btns = tk.Frame(top, bg=C["bg"])
         btns.pack(fill="x", pady=(14, 4))
         tk.Button(
             btns,
-            text="Обрати файл",
+            text=self.t("choose_file"),
             command=self._choose_file,
-            bg=ACCENT,
+            bg=C["accent"],
             fg="#ffffff",
-            activebackground=ACCENT_DARK,
+            activebackground=C["accent_dark"],
             activeforeground="#ffffff",
-            disabledforeground=MUTED,
+            disabledforeground=C["muted"],
             relief="flat",
             bd=0,
             highlightthickness=0,
@@ -144,38 +190,129 @@ class FileCheckerApp:
             pady=8,
         ).pack(side="left")
         self.status = tk.Label(
-            btns, text="Готовий", bg=BG, fg=MUTED, font=("Segoe UI", 10)
+            btns,
+            text=self.t(self.status_key),
+            bg=C["bg"],
+            fg=C["muted"],
+            font=("Segoe UI", 10),
         )
         self.status.pack(side="left", padx=14)
 
         self.verdict_label = tk.Label(
             self.root,
             text="",
-            bg=BG,
-            fg=TEXT,
+            bg=C["bg"],
+            fg=C["text"],
             font=("Segoe UI", 15, "bold"),
             pady=12,
         )
         self.verdict_label.pack(fill="x", padx=24, pady=(10, 0))
 
-        self.report_box = scrolled_text(self.root)
+        self.report_box = scrolled_text(self.root, C)
         self.report_box.pack(fill="both", expand=True, padx=24, pady=(12, 22))
 
-    def _zone_hover_on(self, event=None):
-        self.drop_zone.config(
-            bg=SURFACE_HOVER, highlightbackground=ACCENT, highlightcolor=ACCENT
+        if self.current_verdict:
+            self._render_verdict_banner(self.current_verdict)
+
+    def _rebuild(self):
+        report_text = self.report_box.get("1.0", "end-1c")
+        for widget in self.root.winfo_children():
+            if not isinstance(widget, tk.Toplevel):
+                widget.destroy()
+        self._build_ui()
+        self._set_report(report_text)
+
+    def _open_settings(self):
+        if self.settings_win is not None and self.settings_win.winfo_exists():
+            self.settings_win.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self.settings_win = win
+        win.resizable(False, False)
+        win.transient(self.root)
+        win.geometry(
+            "+%d+%d" % (self.root.winfo_rootx() + 240, self.root.winfo_rooty() + 120)
         )
-        self._zone_icon.config(bg=SURFACE_HOVER)
-        self._zone_hint.config(bg=SURFACE_HOVER)
-        self._zone_sub.config(bg=SURFACE_HOVER)
+        self._render_settings()
+
+    def _render_settings(self):
+        win = self.settings_win
+        if win is None or not win.winfo_exists():
+            return
+        C = self.C
+        win.title(self.t("settings"))
+        win.configure(bg=C["bg"])
+        for widget in win.winfo_children():
+            widget.destroy()
+
+        body = tk.Frame(win, bg=C["bg"], padx=24, pady=20)
+        body.pack(fill="both", expand=True)
+
+        rows = [
+            ("lang_label", "language", [("uk", i18n.LANGUAGES["uk"]), ("en", i18n.LANGUAGES["en"])]),
+            ("theme_label", "theme", [("dark", self.t("theme_dark")), ("light", self.t("theme_light"))]),
+        ]
+        for label_key, setting_key, options in rows:
+            row = tk.Frame(body, bg=C["bg"])
+            row.pack(fill="x", pady=8)
+            tk.Label(
+                row,
+                text=self.t(label_key),
+                bg=C["bg"],
+                fg=C["text"],
+                font=("Segoe UI", 11, "bold"),
+                width=10,
+                anchor="w",
+            ).pack(side="left")
+            for value, title in options:
+                active = self.settings[setting_key] == value
+                tk.Button(
+                    row,
+                    text=title,
+                    command=lambda k=setting_key, v=value: self._set_setting(k, v),
+                    bg=C["accent"] if active else C["surface"],
+                    fg="#ffffff" if active else C["text"],
+                    activebackground=C["accent_dark"] if active else C["surface_hover"],
+                    activeforeground="#ffffff" if active else C["text"],
+                    relief="flat",
+                    bd=0,
+                    highlightthickness=1,
+                    highlightbackground=C["accent"] if active else C["border"],
+                    cursor="hand2",
+                    font=("Segoe UI", 10, "bold" if active else "normal"),
+                    padx=16,
+                    pady=6,
+                ).pack(side="left", padx=(0, 8))
+
+    def _set_setting(self, key, value):
+        if self.settings[key] == value:
+            return
+        self.settings[key] = value
+        app_settings.save(self.settings)
+        self._rebuild()
+        self._render_settings()
+
+    def _zone_hover_on(self, event=None):
+        C = self.C
+        self.drop_zone.config(
+            bg=C["surface_hover"],
+            highlightbackground=C["accent"],
+            highlightcolor=C["accent"],
+        )
+        self._zone_icon.config(bg=C["surface_hover"])
+        self._zone_hint.config(bg=C["surface_hover"])
+        self._zone_sub.config(bg=C["surface_hover"])
 
     def _zone_hover_off(self, event=None):
+        C = self.C
         self.drop_zone.config(
-            bg=SURFACE, highlightbackground=BORDER, highlightcolor=BORDER
+            bg=C["surface"],
+            highlightbackground=C["border"],
+            highlightcolor=C["border"],
         )
-        self._zone_icon.config(bg=SURFACE)
-        self._zone_hint.config(bg=SURFACE)
-        self._zone_sub.config(bg=SURFACE)
+        self._zone_icon.config(bg=C["surface"])
+        self._zone_hint.config(bg=C["surface"])
+        self._zone_sub.config(bg=C["surface"])
 
     def _choose_file(self):
         path = filedialog.askopenfilename()
@@ -192,22 +329,23 @@ class FileCheckerApp:
 
     def _start_check(self, path):
         if self.busy:
-            self._append("Зачекайте: триває перевірка іншого файлу.\n")
+            self._append(self.t("busy") + "\n")
             return
         size_mb = os.path.getsize(path) / (1024 * 1024)
         if size_mb > config.MAX_FILE_SIZE_MB:
-            self._append(f"Файл завеликий ({size_mb:.1f} МБ).\n")
+            self._append(self.t("file_too_big", size=f"{size_mb:.1f}") + "\n")
             return
         self.busy = True
-        self.verdict_label.config(text="", bg=self.root["bg"])
+        self.current_verdict = None
+        self.verdict_label.config(text="", bg=self.C["bg"])
         self._set_report("")
-        self._append(f"Файл: {os.path.basename(path)}\n")
+        self._append(self.t("file_line", name=os.path.basename(path)) + "\n")
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
 
     def _worker(self, path):
         session = None
         try:
-            self.msg_queue.put(("status", "Статичний аналіз..."))
+            self.msg_queue.put(("status", "status_static"))
             static_result = static_analysis.analyze(path)
             self.msg_queue.put(("static", static_result))
 
@@ -226,7 +364,7 @@ class FileCheckerApp:
             self.msg_queue.put(("error", str(e)))
             self.msg_queue.put(("verdict", result))
         except Exception as e:
-            self.msg_queue.put(("error", f"Помилка: {e}"))
+            self.msg_queue.put(("error", str(e)))
         finally:
             if session:
                 sandbox_manager.cleanup(session)
@@ -256,7 +394,8 @@ class FileCheckerApp:
 
     def _handle(self, kind, payload):
         if kind == "status":
-            self.status.config(text=payload)
+            self.status_key = payload if i18n.has(payload) else "ready"
+            self.status.config(text=self.t(payload) if i18n.has(payload) else payload)
         elif kind == "static":
             self._render_static(payload)
         elif kind == "dynamic":
@@ -264,62 +403,74 @@ class FileCheckerApp:
         elif kind == "verdict":
             self._render_verdict(payload)
         elif kind == "error":
-            self._append(f"\n[!] {payload}\n")
+            message = self.t(payload) if i18n.has(payload) else self.t("err_generic", err=payload)
+            self._append(f"\n[!] {message}\n")
         elif kind == "done":
             self.busy = False
-            self.status.config(text="Готовий")
+            self.status_key = "ready"
+            self.status.config(text=self.t("ready"))
 
     def _render_static(self, s):
         lines = [
-            "=== Статичний аналіз ===",
-            f"Тип: {s['detected_type']}   Розширення: {s['extension']}",
-            f"Розмір: {s['file_size']} байт",
+            self.t("static_header"),
+            self.t("static_type", type=s["detected_type"], ext=s["extension"]),
+            self.t("static_size", size=s["file_size"]),
             f"SHA-256: {s['sha256']}",
             f"MD5: {s['md5']}",
-            f"Ентропія: {s['entropy']}",
+            self.t("static_entropy", value=s["entropy"]),
         ]
         if s["extension_mismatch"]:
-            lines.append("[!] Розширення не відповідає типу файлу")
+            lines.append(self.t("warn_mismatch"))
         if s["double_extension"]:
-            lines.append("[!] Подвійне розширення")
+            lines.append(self.t("warn_double"))
         if s["suspicious_strings"]:
-            lines.append("Підозрілі рядки: " + ", ".join(s["suspicious_strings"]))
+            lines.append(self.t("static_sus", items=", ".join(s["suspicious_strings"])))
         if s["urls"]:
-            lines.append("URL: " + ", ".join(s["urls"][:10]))
+            lines.append(self.t("static_urls", items=", ".join(s["urls"][:10])))
         self._append("\n".join(lines) + "\n")
 
     def _render_dynamic(self, d):
-        lines = ["\n=== Динамічний аналіз (пісочниця) ==="]
-        lines.append(f"Запущено: {d.get('launched')}   Спостереження: {d.get('observed_seconds')} с")
+        lines = ["\n" + self.t("dynamic_header")]
+        lines.append(
+            self.t(
+                "dynamic_launched",
+                launched=d.get("launched"),
+                seconds=d.get("observed_seconds"),
+            )
+        )
         fields = [
-            ("Нові процеси", "new_processes"),
-            ("Нові служби", "new_services"),
-            ("Нові завдання", "new_tasks"),
-            ("Зміни автозапуску", "new_autoruns"),
-            ("Нові файли", "new_files"),
-            ("Мережеві з'єднання", "new_connections"),
+            ("f_processes", "new_processes"),
+            ("f_services", "new_services"),
+            ("f_tasks", "new_tasks"),
+            ("f_autoruns", "new_autoruns"),
+            ("f_files", "new_files"),
+            ("f_connections", "new_connections"),
         ]
-        for label, key in fields:
+        for label_key, key in fields:
             vals = d.get(key) or []
             if vals:
                 shown = ", ".join(str(v) for v in vals[:15])
-                lines.append(f"{label} ({len(vals)}): {shown}")
+                lines.append(f"{self.t(label_key)} ({len(vals)}): {shown}")
         self._append("\n".join(lines) + "\n")
 
     def _render_verdict(self, v):
-        color = LEVEL_COLORS.get(v["level"], BORDER)
-        fg = LEVEL_TEXT_COLORS.get(v["level"], TEXT)
+        self.current_verdict = v
+        self._render_verdict_banner(v)
+        lines = ["\n" + self.t("verdict_header")]
+        for key, params in v["indicators"]:
+            lines.append(" - " + self.t(key, **params))
+        if not v["indicators"]:
+            lines.append(self.t("no_indicators"))
+        self._append("\n".join(lines) + "\n")
+
+    def _render_verdict_banner(self, v):
+        color = LEVEL_COLORS.get(v["level"], self.C["border"])
+        fg = LEVEL_TEXT_COLORS.get(v["level"], self.C["text"])
         self.verdict_label.config(
-            text=f"Вердикт: {v['level']}  ({v['score']}/100)",
+            text=self.t("verdict_line", level=self.t("level_" + v["level"]), score=v["score"]),
             bg=color,
             fg=fg,
         )
-        lines = ["\n=== Вердикт ==="]
-        for ind in v["indicators"]:
-            lines.append(" - " + ind)
-        if not v["indicators"]:
-            lines.append("Підозрілої активності не виявлено.")
-        self._append("\n".join(lines) + "\n")
 
     def _append(self, text):
         self.report_box.config(state="normal")
@@ -334,33 +485,33 @@ class FileCheckerApp:
         self.report_box.config(state="disabled")
 
 
-def scrolled_text(parent):
+def scrolled_text(parent, C):
     style = ttk.Style(parent)
     try:
         style.theme_use("clam")
     except tk.TclError:
         pass
     style.configure(
-        "Dark.Vertical.TScrollbar",
-        background=BORDER,
-        troughcolor=SURFACE,
-        bordercolor=SURFACE,
-        lightcolor=SURFACE,
-        darkcolor=SURFACE,
-        arrowcolor=MUTED,
+        "App.Vertical.TScrollbar",
+        background=C["border"],
+        troughcolor=C["surface"],
+        bordercolor=C["surface"],
+        lightcolor=C["surface"],
+        darkcolor=C["surface"],
+        arrowcolor=C["muted"],
         relief="flat",
     )
     style.map(
-        "Dark.Vertical.TScrollbar",
-        background=[("active", "#3a4150"), ("pressed", ACCENT)],
+        "App.Vertical.TScrollbar",
+        background=[("active", C["scroll_active"]), ("pressed", C["accent"])],
     )
     frame = tk.Frame(
         parent,
-        bg=SURFACE,
+        bg=C["surface"],
         bd=0,
         highlightthickness=1,
-        highlightbackground=BORDER,
-        highlightcolor=BORDER,
+        highlightbackground=C["border"],
+        highlightcolor=C["border"],
     )
     frame.pack_propagate(False)
     text = tk.Text(
@@ -368,10 +519,10 @@ def scrolled_text(parent):
         wrap="word",
         font=("Consolas", 10),
         state="disabled",
-        bg=SURFACE,
-        fg=REPORT_FG,
-        insertbackground=TEXT,
-        selectbackground=ACCENT,
+        bg=C["surface"],
+        fg=C["report_fg"],
+        insertbackground=C["text"],
+        selectbackground=C["accent"],
         selectforeground="#ffffff",
         relief="flat",
         bd=0,
@@ -380,7 +531,7 @@ def scrolled_text(parent):
         pady=12,
     )
     scroll = ttk.Scrollbar(
-        frame, command=text.yview, style="Dark.Vertical.TScrollbar"
+        frame, command=text.yview, style="App.Vertical.TScrollbar"
     )
     text.config(yscrollcommand=scroll.set)
     scroll.pack(side="right", fill="y", padx=(0, 2), pady=2)
