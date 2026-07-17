@@ -18,10 +18,26 @@ except ImportError:
     DND_AVAILABLE = False
 
 
+BG = "#0f1115"
+SURFACE = "#171a21"
+SURFACE_HOVER = "#1d222c"
+BORDER = "#2a2f3a"
+ACCENT = "#4f8cff"
+ACCENT_DARK = "#3d74e0"
+TEXT = "#e8ebf1"
+MUTED = "#8b93a3"
+REPORT_FG = "#c9d1de"
+
 LEVEL_COLORS = {
-    "Чистий": "#2e7d32",
-    "Підозрілий": "#f57f17",
-    "Небезпечний": "#c62828",
+    "Чистий": "#22c55e",
+    "Підозрілий": "#f59e0b",
+    "Небезпечний": "#ef4444",
+}
+
+LEVEL_TEXT_COLORS = {
+    "Чистий": "#06301a",
+    "Підозрілий": "#3b2703",
+    "Небезпечний": "#ffffff",
 }
 
 
@@ -29,45 +45,137 @@ class FileCheckerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("FileChecker — перевірка файлів у пісочниці")
-        self.root.geometry("820x640")
+        self.root.geometry("860x680")
+        self.root.minsize(760, 560)
+        self.root.configure(bg=BG)
         self.msg_queue = queue.Queue()
         self.busy = False
         self._build_ui()
         self.root.after(100, self._poll_queue)
 
     def _build_ui(self):
-        top = tk.Frame(self.root, padx=12, pady=12)
-        top.pack(fill="x")
+        header = tk.Frame(self.root, bg=BG)
+        header.pack(fill="x", padx=24, pady=(20, 12))
+        tk.Label(
+            header,
+            text="FileChecker",
+            bg=BG,
+            fg=TEXT,
+            font=("Segoe UI", 18, "bold"),
+        ).pack(side="left")
+        tk.Label(
+            header,
+            text="перевірка файлів у пісочниці",
+            bg=BG,
+            fg=MUTED,
+            font=("Segoe UI", 10),
+        ).pack(side="left", padx=(12, 0), pady=(7, 0))
 
-        self.drop_zone = tk.Label(
+        top = tk.Frame(self.root, bg=BG)
+        top.pack(fill="x", padx=24)
+
+        self.drop_zone = tk.Frame(
             top,
-            text="Перетягніть файл сюди\nабо натисніть «Обрати файл»",
-            relief="ridge",
-            bd=2,
-            height=5,
-            bg="#eef2f7",
-            fg="#333",
-            font=("Segoe UI", 11),
+            bg=SURFACE,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=BORDER,
         )
         self.drop_zone.pack(fill="x")
 
-        if DND_AVAILABLE:
-            self.drop_zone.drop_target_register(DND_FILES)
-            self.drop_zone.dnd_bind("<<Drop>>", self._on_drop)
+        self._zone_icon = tk.Label(
+            self.drop_zone,
+            text="⬇",
+            bg=SURFACE,
+            fg=ACCENT,
+            font=("Segoe UI", 26, "bold"),
+        )
+        self._zone_icon.pack(pady=(28, 2))
+        self._zone_hint = tk.Label(
+            self.drop_zone,
+            text="Перетягніть файл сюди",
+            bg=SURFACE,
+            fg=TEXT,
+            font=("Segoe UI", 12, "bold"),
+        )
+        self._zone_hint.pack()
+        self._zone_sub = tk.Label(
+            self.drop_zone,
+            text="або натисніть «Обрати файл»",
+            bg=SURFACE,
+            fg=MUTED,
+            font=("Segoe UI", 10),
+        )
+        self._zone_sub.pack(pady=(4, 28))
 
-        btns = tk.Frame(top, pady=8)
-        btns.pack(fill="x")
-        tk.Button(btns, text="Обрати файл", command=self._choose_file).pack(side="left")
-        self.status = tk.Label(btns, text="Готовий", fg="#555")
-        self.status.pack(side="left", padx=12)
+        self._zone_widgets = (
+            self.drop_zone,
+            self._zone_icon,
+            self._zone_hint,
+            self._zone_sub,
+        )
+        for widget in self._zone_widgets:
+            widget.bind("<Enter>", self._zone_hover_on)
+            widget.bind("<Leave>", self._zone_hover_off)
+
+        if DND_AVAILABLE:
+            for widget in self._zone_widgets:
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<Drop>>", self._on_drop)
+
+        btns = tk.Frame(top, bg=BG)
+        btns.pack(fill="x", pady=(14, 4))
+        tk.Button(
+            btns,
+            text="Обрати файл",
+            command=self._choose_file,
+            bg=ACCENT,
+            fg="#ffffff",
+            activebackground=ACCENT_DARK,
+            activeforeground="#ffffff",
+            disabledforeground=MUTED,
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2",
+            font=("Segoe UI", 10, "bold"),
+            padx=20,
+            pady=8,
+        ).pack(side="left")
+        self.status = tk.Label(
+            btns, text="Готовий", bg=BG, fg=MUTED, font=("Segoe UI", 10)
+        )
+        self.status.pack(side="left", padx=14)
 
         self.verdict_label = tk.Label(
-            self.root, text="", font=("Segoe UI", 16, "bold"), pady=6
+            self.root,
+            text="",
+            bg=BG,
+            fg=TEXT,
+            font=("Segoe UI", 15, "bold"),
+            pady=12,
         )
-        self.verdict_label.pack(fill="x")
+        self.verdict_label.pack(fill="x", padx=24, pady=(10, 0))
 
         self.report_box = scrolled_text(self.root)
-        self.report_box.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.report_box.pack(fill="both", expand=True, padx=24, pady=(12, 22))
+
+    def _zone_hover_on(self, event=None):
+        self.drop_zone.config(
+            bg=SURFACE_HOVER, highlightbackground=ACCENT, highlightcolor=ACCENT
+        )
+        self._zone_icon.config(bg=SURFACE_HOVER)
+        self._zone_hint.config(bg=SURFACE_HOVER)
+        self._zone_sub.config(bg=SURFACE_HOVER)
+
+    def _zone_hover_off(self, event=None):
+        self.drop_zone.config(
+            bg=SURFACE, highlightbackground=BORDER, highlightcolor=BORDER
+        )
+        self._zone_icon.config(bg=SURFACE)
+        self._zone_hint.config(bg=SURFACE)
+        self._zone_sub.config(bg=SURFACE)
 
     def _choose_file(self):
         path = filedialog.askopenfilename()
@@ -199,11 +307,12 @@ class FileCheckerApp:
         self._append("\n".join(lines) + "\n")
 
     def _render_verdict(self, v):
-        color = LEVEL_COLORS.get(v["level"], "#333")
+        color = LEVEL_COLORS.get(v["level"], BORDER)
+        fg = LEVEL_TEXT_COLORS.get(v["level"], TEXT)
         self.verdict_label.config(
             text=f"Вердикт: {v['level']}  ({v['score']}/100)",
             bg=color,
-            fg="white",
+            fg=fg,
         )
         lines = ["\n=== Вердикт ==="]
         for ind in v["indicators"]:
@@ -226,12 +335,55 @@ class FileCheckerApp:
 
 
 def scrolled_text(parent):
-    frame = tk.Frame(parent)
+    style = ttk.Style(parent)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass
+    style.configure(
+        "Dark.Vertical.TScrollbar",
+        background=BORDER,
+        troughcolor=SURFACE,
+        bordercolor=SURFACE,
+        lightcolor=SURFACE,
+        darkcolor=SURFACE,
+        arrowcolor=MUTED,
+        relief="flat",
+    )
+    style.map(
+        "Dark.Vertical.TScrollbar",
+        background=[("active", "#3a4150"), ("pressed", ACCENT)],
+    )
+    frame = tk.Frame(
+        parent,
+        bg=SURFACE,
+        bd=0,
+        highlightthickness=1,
+        highlightbackground=BORDER,
+        highlightcolor=BORDER,
+    )
     frame.pack_propagate(False)
-    text = tk.Text(frame, wrap="word", font=("Consolas", 10), state="disabled")
-    scroll = ttk.Scrollbar(frame, command=text.yview)
+    text = tk.Text(
+        frame,
+        wrap="word",
+        font=("Consolas", 10),
+        state="disabled",
+        bg=SURFACE,
+        fg=REPORT_FG,
+        insertbackground=TEXT,
+        selectbackground=ACCENT,
+        selectforeground="#ffffff",
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        padx=14,
+        pady=12,
+    )
+    scroll = ttk.Scrollbar(
+        frame, command=text.yview, style="Dark.Vertical.TScrollbar"
+    )
     text.config(yscrollcommand=scroll.set)
-    scroll.pack(side="right", fill="y")
+    scroll.pack(side="right", fill="y", padx=(0, 2), pady=2)
     text.pack(side="left", fill="both", expand=True)
     text.pack = frame.pack
     return text
