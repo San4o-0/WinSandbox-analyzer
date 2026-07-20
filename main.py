@@ -56,6 +56,9 @@ LEVEL_COLORS = {
     "dangerous": "#ef4444",
 }
 
+STEP_KEYS = ("status_static", "sandbox_start", "sandbox_analyzing")
+STEP_LABELS = ("step_inspect", "step_sandbox", "step_watch")
+
 LEVEL_TEXT_COLORS = {
     "clean": "#06301a",
     "suspicious": "#3b2703",
@@ -76,6 +79,12 @@ class SandCheckApp:
         self.settings_win = None
         self.progress_pos = 0.0
         self.progress_job = None
+        self.stage = "idle"
+        self.step_index = 0
+        self.checked_name = ""
+        self.spinner_angle = 0
+        self.spinner_job = None
+        self.score_shown = 0
         self.root.geometry("860x680")
         self.root.minsize(760, 560)
         self._build_ui()
@@ -150,46 +159,7 @@ class SandCheckApp:
             highlightcolor=C["border"],
         )
         self.drop_zone.pack(fill="x")
-
-        self._zone_icon = tk.Label(
-            self.drop_zone,
-            text="⬇",
-            bg=C["surface"],
-            fg=C["accent"],
-            font=("Segoe UI", 26, "bold"),
-        )
-        self._zone_icon.pack(pady=(28, 2))
-        self._zone_hint = tk.Label(
-            self.drop_zone,
-            text=self.t("drop_hint"),
-            bg=C["surface"],
-            fg=C["text"],
-            font=("Segoe UI", 12, "bold"),
-        )
-        self._zone_hint.pack()
-        self._zone_sub = tk.Label(
-            self.drop_zone,
-            text=self.t("drop_sub"),
-            bg=C["surface"],
-            fg=C["muted"],
-            font=("Segoe UI", 10),
-        )
-        self._zone_sub.pack(pady=(4, 28))
-
-        self._zone_widgets = (
-            self.drop_zone,
-            self._zone_icon,
-            self._zone_hint,
-            self._zone_sub,
-        )
-        for widget in self._zone_widgets:
-            widget.bind("<Enter>", self._zone_hover_on)
-            widget.bind("<Leave>", self._zone_hover_off)
-
-        if DND_AVAILABLE:
-            for widget in self._zone_widgets:
-                widget.drop_target_register(DND_FILES)
-                widget.dnd_bind("<<Drop>>", self._on_drop)
+        self._render_zone()
 
         btns = tk.Frame(top, bg=C["bg"])
         btns.pack(fill="x", pady=(14, 4))
@@ -198,7 +168,7 @@ class SandCheckApp:
             text=self.t("choose_file"),
             command=self._choose_file,
             bg=C["surface"] if self.busy else C["accent"],
-            fg="#ffffff",
+            fg=C["muted"] if self.busy else "#ffffff",
             activebackground=C["accent_dark"],
             activeforeground="#ffffff",
             disabledforeground=C["muted"],
@@ -240,6 +210,106 @@ class SandCheckApp:
         self._draw_verdict()
         if self.current_verdict:
             self._render_report()
+
+    def _render_zone(self):
+        C = self.C
+        zone = self.drop_zone
+        if self.spinner_job is not None:
+            self.root.after_cancel(self.spinner_job)
+            self.spinner_job = None
+        for widget in zone.winfo_children():
+            widget.destroy()
+        zone.config(bg=C["surface"], highlightbackground=C["border"])
+
+        if self.stage == "checking":
+            self._build_zone_checking()
+        elif self.stage == "done":
+            self._build_zone_done()
+        else:
+            self._build_zone_idle()
+
+    def _build_zone_idle(self):
+        C = self.C
+        zone = self.drop_zone
+        icon = tk.Label(zone, text="⬇", bg=C["surface"], fg=C["accent"],
+                        font=("Segoe UI", 26, "bold"))
+        icon.pack(pady=(28, 2))
+        hint = tk.Label(zone, text=self.t("drop_hint"), bg=C["surface"], fg=C["text"],
+                        font=("Segoe UI", 12, "bold"))
+        hint.pack()
+        sub = tk.Label(zone, text=self.t("drop_sub"), bg=C["surface"], fg=C["muted"],
+                       font=("Segoe UI", 10))
+        sub.pack(pady=(4, 28))
+
+        self._zone_widgets = (zone, icon, hint, sub)
+        for widget in self._zone_widgets:
+            widget.bind("<Enter>", self._zone_hover_on)
+            widget.bind("<Leave>", self._zone_hover_off)
+        if DND_AVAILABLE:
+            for widget in self._zone_widgets:
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<Drop>>", self._on_drop)
+
+    def _build_zone_checking(self):
+        C = self.C
+        zone = self.drop_zone
+        self._zone_widgets = (zone,)
+        head = tk.Frame(zone, bg=C["surface"])
+        head.pack(pady=(22, 14))
+        self.spinner = tk.Canvas(head, width=26, height=26, bg=C["surface"],
+                                 highlightthickness=0)
+        self.spinner.pack(side="left", padx=(0, 10))
+        tk.Label(head, text=self.checked_name or self.t("check_in_progress"),
+                 bg=C["surface"], fg=C["text"], font=("Segoe UI", 11, "bold")).pack(side="left")
+
+        steps = tk.Frame(zone, bg=C["surface"])
+        steps.pack(pady=(0, 22))
+        for index, key in enumerate(STEP_LABELS):
+            done = index < self.step_index
+            active = index == self.step_index
+            row = tk.Frame(steps, bg=C["surface"])
+            row.pack(anchor="w", pady=2)
+            mark = "✓" if done else ("●" if active else "○")
+            color = LEVEL_COLORS["clean"] if done else (C["accent"] if active else C["muted"])
+            tk.Label(row, text=mark, bg=C["surface"], fg=color,
+                     font=("Segoe UI", 10, "bold"), width=2).pack(side="left")
+            tk.Label(row, text=self.t(key), bg=C["surface"],
+                     fg=C["text"] if active else C["muted"],
+                     font=("Segoe UI", 10, "bold" if active else "normal")).pack(side="left")
+        self._animate_spinner()
+
+    def _build_zone_done(self):
+        C = self.C
+        zone = self.drop_zone
+        self._zone_widgets = (zone,)
+        tk.Label(zone, text="✓", bg=C["surface"], fg=LEVEL_COLORS["clean"],
+                 font=("Segoe UI", 24, "bold")).pack(pady=(26, 2))
+        tk.Label(zone, text=self.t("done_title"), bg=C["surface"], fg=C["text"],
+                 font=("Segoe UI", 12, "bold")).pack()
+        tk.Label(zone, text=self.t("done_sub"), bg=C["surface"], fg=C["muted"],
+                 font=("Segoe UI", 10)).pack(pady=(4, 8))
+        again = tk.Button(zone, text=self.t("check_another"), command=self._choose_file,
+                          bg=C["surface"], fg=C["accent"], activebackground=C["surface_hover"],
+                          activeforeground=C["accent"], relief="flat", bd=0,
+                          highlightthickness=1, highlightbackground=C["accent"],
+                          cursor="hand2", font=("Segoe UI", 10, "bold"), padx=18, pady=6)
+        again.pack(pady=(0, 24))
+        self._zone_widgets = (zone,)
+        if DND_AVAILABLE:
+            zone.drop_target_register(DND_FILES)
+            zone.dnd_bind("<<Drop>>", self._on_drop)
+
+    def _animate_spinner(self):
+        if self.stage != "checking" or not self.spinner.winfo_exists():
+            self.spinner_job = None
+            return
+        self.spinner_angle = (self.spinner_angle + 12) % 360
+        C = self.C
+        self.spinner.delete("all")
+        self.spinner.create_oval(3, 3, 23, 23, outline=C["border"], width=3)
+        self.spinner.create_arc(3, 3, 23, 23, start=self.spinner_angle, extent=110,
+                                style="arc", outline=C["accent"], width=3)
+        self.spinner_job = self.root.after(40, self._animate_spinner)
 
     def _configure_tags(self):
         C = self.C
@@ -411,7 +481,11 @@ class SandCheckApp:
         self.current_verdict = None
         self.current_static = None
         self.notice = ""
-        self.status_key = "status_static"
+        self.stage = "checking"
+        self.step_index = 0
+        self.checked_name = os.path.basename(path)
+        self.score_shown = 0
+        self._render_zone()
         self._set_status("status_static")
         self._start_progress()
         self._draw_verdict()
@@ -429,6 +503,7 @@ class SandCheckApp:
         self.choose_btn.config(
             state="disabled" if self.busy else "normal",
             bg=C["surface"] if self.busy else C["accent"],
+            fg=C["muted"] if self.busy else "#ffffff",
             cursor="watch" if self.busy else "hand2",
         )
 
@@ -485,20 +560,26 @@ class SandCheckApp:
     def _handle(self, kind, payload):
         if kind == "status":
             self._set_status(payload if i18n.has(payload) else "ready")
+            if payload in STEP_KEYS:
+                self.step_index = STEP_KEYS.index(payload)
+                self._render_zone()
         elif kind == "static":
             self.current_static = payload
             self._render_report()
         elif kind == "verdict":
             self.current_verdict = payload
-            self._draw_verdict()
+            self.score_shown = 0
+            self._animate_score()
             self._render_report()
         elif kind == "error":
             self.notice = payload
             self._render_report()
         elif kind == "done":
             self.busy = False
+            self.stage = "done"
             self._stop_progress()
-            self._set_status("ready")
+            self._render_zone()
+            self._set_status("status_done")
 
     def _render_report(self):
         s = self.current_static
@@ -606,6 +687,16 @@ class SandCheckApp:
             fill=C["accent"], outline="",
         )
 
+    def _animate_score(self):
+        target = self.current_verdict["score"] if self.current_verdict else 0
+        if self.score_shown < target:
+            self.score_shown = min(target, self.score_shown + max(1, target // 18))
+            self._draw_verdict()
+            self.root.after(20, self._animate_score)
+        else:
+            self.score_shown = target
+            self._draw_verdict()
+
     def _draw_verdict(self, event=None):
         canvas = self.verdict_canvas
         canvas.delete("all")
@@ -644,14 +735,14 @@ class SandCheckApp:
         )
         canvas.create_text(
             width - 22, 26,
-            text=f"{v['score']}/100",
+            text=f"{self.score_shown}/100",
             fill=fg, font=("Segoe UI", 16, "bold"), anchor="e",
         )
         track_x0, track_x1 = 22, width - 22
         canvas.create_rectangle(
             track_x0, 50, track_x1, 58, fill=_shade(base, 0.55), outline=""
         )
-        filled = track_x0 + (track_x1 - track_x0) * v["score"] / 100
+        filled = track_x0 + (track_x1 - track_x0) * self.score_shown / 100
         canvas.create_rectangle(track_x0, 50, filled, 58, fill=fg, outline="")
 
     def _append(self, text):
