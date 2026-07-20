@@ -74,6 +74,8 @@ class SandCheckApp:
         self.notice = ""
         self.status_key = "ready"
         self.settings_win = None
+        self.progress_pos = 0.0
+        self.progress_job = None
         self.root.geometry("860x680")
         self.root.minsize(760, 560)
         self._build_ui()
@@ -191,31 +193,40 @@ class SandCheckApp:
 
         btns = tk.Frame(top, bg=C["bg"])
         btns.pack(fill="x", pady=(14, 4))
-        tk.Button(
+        self.choose_btn = tk.Button(
             btns,
             text=self.t("choose_file"),
             command=self._choose_file,
-            bg=C["accent"],
+            bg=C["surface"] if self.busy else C["accent"],
             fg="#ffffff",
             activebackground=C["accent_dark"],
             activeforeground="#ffffff",
             disabledforeground=C["muted"],
+            state="disabled" if self.busy else "normal",
             relief="flat",
             bd=0,
             highlightthickness=0,
-            cursor="hand2",
+            cursor="watch" if self.busy else "hand2",
             font=("Segoe UI", 10, "bold"),
             padx=20,
             pady=8,
-        ).pack(side="left")
+        )
+        self.choose_btn.pack(side="left")
         self.status = tk.Label(
             btns,
             text=self.t(self.status_key),
             bg=C["bg"],
-            fg=C["muted"],
-            font=("Segoe UI", 10),
+            fg=C["accent"] if self.busy else C["muted"],
+            font=("Segoe UI", 10, "bold" if self.busy else "normal"),
         )
         self.status.pack(side="left", padx=14)
+
+        self.progress = tk.Canvas(
+            self.root, height=4, bg=C["surface"], highlightthickness=0
+        )
+        self.progress.pack(fill="x", padx=24, pady=(6, 0))
+        if not self.busy:
+            self.progress.pack_forget()
 
         self.verdict_canvas = tk.Canvas(
             self.root, height=76, bg=C["bg"], highlightthickness=0
@@ -255,10 +266,15 @@ class SandCheckApp:
             box.tag_configure("dot_" + name, font=("Segoe UI", 11, "bold"), foreground=color)
 
     def _rebuild(self):
+        if self.progress_job is not None:
+            self.root.after_cancel(self.progress_job)
+            self.progress_job = None
         for widget in self.root.winfo_children():
             if not isinstance(widget, tk.Toplevel):
                 widget.destroy()
         self._build_ui()
+        if self.busy:
+            self._start_progress()
 
     def _open_settings(self):
         if self.settings_win is not None and self.settings_win.winfo_exists():
@@ -395,9 +411,26 @@ class SandCheckApp:
         self.current_verdict = None
         self.current_static = None
         self.notice = ""
+        self.status_key = "status_static"
+        self._set_status("status_static")
+        self._start_progress()
         self._draw_verdict()
         self._render_report()
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
+
+    def _set_status(self, key):
+        C = self.C
+        self.status_key = key
+        self.status.config(
+            text=self.t(key) if i18n.has(key) else key,
+            fg=C["accent"] if self.busy else C["muted"],
+            font=("Segoe UI", 10, "bold" if self.busy else "normal"),
+        )
+        self.choose_btn.config(
+            state="disabled" if self.busy else "normal",
+            bg=C["surface"] if self.busy else C["accent"],
+            cursor="watch" if self.busy else "hand2",
+        )
 
     def _worker(self, path):
         session = None
@@ -451,8 +484,7 @@ class SandCheckApp:
 
     def _handle(self, kind, payload):
         if kind == "status":
-            self.status_key = payload if i18n.has(payload) else "ready"
-            self.status.config(text=self.t(payload) if i18n.has(payload) else payload)
+            self._set_status(payload if i18n.has(payload) else "ready")
         elif kind == "static":
             self.current_static = payload
             self._render_report()
@@ -461,14 +493,12 @@ class SandCheckApp:
             self._draw_verdict()
             self._render_report()
         elif kind == "error":
-            self.notice = (
-                self.t(payload) if i18n.has(payload) else self.t("err_generic", err=payload)
-            )
+            self.notice = payload
             self._render_report()
         elif kind == "done":
             self.busy = False
-            self.status_key = "ready"
-            self.status.config(text=self.t("ready"))
+            self._stop_progress()
+            self._set_status("ready")
 
     def _render_report(self):
         s = self.current_static
@@ -497,7 +527,12 @@ class SandCheckApp:
             self._write(s["sha256"], "mono")
 
         if self.notice:
-            self._write(self.notice, "note")
+            text = (
+                self.t(self.notice)
+                if i18n.has(self.notice)
+                else self.t("err_generic", err=self.notice)
+            )
+            self._write(text, "note")
 
         if v:
             static_cards = [c for c in v["cards"] if c["key"] not in i18n.DYNAMIC_KEYS]
@@ -539,6 +574,38 @@ class SandCheckApp:
         if items and card["key"].startswith("cat_"):
             self._write(self.t("found_markers", items=items), "mono")
 
+    def _start_progress(self):
+        self.progress.pack(fill="x", padx=24, pady=(6, 0))
+        if self.progress_job is None:
+            self._animate_progress()
+
+    def _stop_progress(self):
+        if self.progress_job is not None:
+            self.root.after_cancel(self.progress_job)
+            self.progress_job = None
+        self.progress.delete("all")
+        self.progress.pack_forget()
+
+    def _animate_progress(self):
+        canvas = self.progress
+        if not self.busy or not canvas.winfo_exists():
+            self.progress_job = None
+            return
+        self.progress_job = self.root.after(16, self._animate_progress)
+        width = canvas.winfo_width()
+        if width <= 1:
+            return
+        canvas.delete("all")
+        C = self.C
+        canvas.create_rectangle(0, 0, width, 4, fill=C["surface"], outline="")
+        span = width * 0.3
+        self.progress_pos = (self.progress_pos + width * 0.012) % (width + span)
+        x0 = self.progress_pos - span
+        canvas.create_rectangle(
+            max(x0, 0), 0, min(self.progress_pos, width), 4,
+            fill=C["accent"], outline="",
+        )
+
     def _draw_verdict(self, event=None):
         canvas = self.verdict_canvas
         canvas.delete("all")
@@ -554,9 +621,9 @@ class SandCheckApp:
             canvas.create_text(
                 width // 2,
                 38,
-                text=self.t("drop_sub"),
-                fill=C["muted"],
-                font=("Segoe UI", 10),
+                text=self.t("check_in_progress") if self.busy else self.t("drop_sub"),
+                fill=C["accent"] if self.busy else C["muted"],
+                font=("Segoe UI", 11, "bold") if self.busy else ("Segoe UI", 10),
             )
             return
 
