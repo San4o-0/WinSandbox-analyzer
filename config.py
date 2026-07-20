@@ -25,6 +25,37 @@ SUSPICIOUS_STRINGS = [
     "cmd.exe /c", "wscript.exe", "mshta", "rundll32",
 ]
 
+BEHAVIOR_CATEGORIES = [
+    ("cat_destruct", ["vssadmin delete", "wevtutil cl", "bcdedit /set"]),
+    ("cat_spy", ["SetWindowsHookEx", "GetAsyncKeyState"]),
+    ("cat_inject", [
+        "VirtualAlloc", "VirtualProtect", "CreateRemoteThread", "WriteProcessMemory",
+        "ReadProcessMemory", "OpenProcess", "NtUnmapViewOfSection",
+    ]),
+    ("cat_download", [
+        "URLDownloadToFile", "DownloadString", "bitsadmin", "certutil -decode",
+    ]),
+    ("cat_evade", [
+        "IsDebuggerPresent", "AdjustTokenPrivileges", "FromBase64String",
+        "powershell -e", "powershell.exe -enc", "-EncodedCommand",
+    ]),
+    ("cat_persist", ["RegSetValue", "schtasks /create"]),
+    ("cat_exec", [
+        "WinExec", "ShellExecute", "Invoke-Expression", "IEX(", "cmd.exe /c",
+        "wscript.exe", "mshta", "rundll32",
+    ]),
+]
+
+CATEGORY_SEVERITY = {
+    "cat_destruct": "danger",
+    "cat_spy": "danger",
+    "cat_inject": "warn",
+    "cat_download": "warn",
+    "cat_evade": "warn",
+    "cat_persist": "warn",
+    "cat_exec": "info",
+}
+
 EXECUTABLE_EXTENSIONS = {
     ".exe", ".dll", ".scr", ".com", ".pif", ".msi", ".bat", ".cmd",
     ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".hta", ".jar", ".lnk",

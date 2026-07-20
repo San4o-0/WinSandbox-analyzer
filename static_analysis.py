@@ -74,6 +74,20 @@ def check_double_extension(path):
     return False
 
 
+def group_behaviors(found):
+    groups = []
+    seen = set()
+    for category, markers in config.BEHAVIOR_CATEGORIES:
+        hits = [s for s in found if s in markers]
+        if hits:
+            groups.append((category, hits))
+            seen.update(hits)
+    rest = [s for s in found if s not in seen]
+    if rest:
+        groups.append(("cat_other", rest))
+    return groups
+
+
 def analyze(path):
     sha256, md5 = compute_hashes(path)
     entropy = compute_entropy(path)
@@ -88,6 +102,7 @@ def analyze(path):
         "detected_type": ftype,
         "extension": os.path.splitext(path)[1].lower(),
         "suspicious_strings": sus_strings,
+        "behaviors": group_behaviors(sus_strings),
         "urls": urls,
         "extension_mismatch": check_extension_mismatch(path, ftype),
         "double_extension": check_double_extension(path),

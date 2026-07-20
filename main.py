@@ -70,6 +70,8 @@ class SandCheckApp:
         self.msg_queue = queue.Queue()
         self.busy = False
         self.current_verdict = None
+        self.current_static = None
+        self.notice = ""
         self.status_key = "ready"
         self.settings_win = None
         self.root.geometry("860x680")
@@ -215,29 +217,48 @@ class SandCheckApp:
         )
         self.status.pack(side="left", padx=14)
 
-        self.verdict_label = tk.Label(
-            self.root,
-            text="",
-            bg=C["bg"],
-            fg=C["text"],
-            font=("Segoe UI", 15, "bold"),
-            pady=12,
+        self.verdict_canvas = tk.Canvas(
+            self.root, height=76, bg=C["bg"], highlightthickness=0
         )
-        self.verdict_label.pack(fill="x", padx=24, pady=(10, 0))
+        self.verdict_canvas.pack(fill="x", padx=24, pady=(12, 0))
+        self.verdict_canvas.bind("<Configure>", self._draw_verdict)
 
         self.report_box = scrolled_text(self.root, C)
         self.report_box.pack(fill="both", expand=True, padx=24, pady=(12, 22))
-
+        self._configure_tags()
+        self._draw_verdict()
         if self.current_verdict:
-            self._render_verdict_banner(self.current_verdict)
+            self._render_report()
+
+    def _configure_tags(self):
+        C = self.C
+        box = self.report_box
+        box.tag_configure("section", font=("Segoe UI", 12, "bold"), foreground=C["text"],
+                          spacing1=16, spacing3=8)
+        box.tag_configure("title", font=("Segoe UI", 10, "bold"), foreground=C["text"],
+                          spacing1=8, spacing3=2)
+        box.tag_configure("body", font=("Segoe UI", 10), foreground=C["muted"],
+                          lmargin1=22, lmargin2=22, spacing3=4)
+        box.tag_configure("mono", font=("Consolas", 9), foreground=C["report_fg"],
+                          lmargin1=22, lmargin2=22, spacing3=2)
+        box.tag_configure("row", font=("Segoe UI", 10), foreground=C["report_fg"],
+                          spacing3=3)
+        box.tag_configure("note", font=("Segoe UI", 10, "italic"), foreground=C["muted"],
+                          spacing1=6, spacing3=6)
+        box.tag_configure("advice", font=("Segoe UI", 10), foreground=C["text"],
+                          spacing3=6)
+        for name, color in (
+            ("danger", LEVEL_COLORS["dangerous"]),
+            ("warn", LEVEL_COLORS["suspicious"]),
+            ("info", C["accent"]),
+        ):
+            box.tag_configure("dot_" + name, font=("Segoe UI", 11, "bold"), foreground=color)
 
     def _rebuild(self):
-        report_text = self.report_box.get("1.0", "end-1c")
         for widget in self.root.winfo_children():
             if not isinstance(widget, tk.Toplevel):
                 widget.destroy()
         self._build_ui()
-        self._set_report(report_text)
 
     def _open_settings(self):
         if self.settings_win is not None and self.settings_win.winfo_exists():
@@ -343,9 +364,13 @@ class SandCheckApp:
                     ["zenity", "--file-selection", "--title", self.t("choose_file")],
                     capture_output=True,
                     text=True,
-                    timeout=300,
+                    timeout=600,
+                    env=_native_env(),
                 )
-                return proc.stdout.strip() if proc.returncode == 0 else ""
+                if proc.returncode == 0:
+                    return proc.stdout.strip()
+                if proc.returncode == 1:
+                    return ""
             except (OSError, subprocess.TimeoutExpired):
                 pass
         return filedialog.askopenfilename()
@@ -368,9 +393,10 @@ class SandCheckApp:
             return
         self.busy = True
         self.current_verdict = None
-        self.verdict_label.config(text="", bg=self.C["bg"])
-        self._set_report("")
-        self._append(self.t("file_line", name=os.path.basename(path)) + "\n")
+        self.current_static = None
+        self.notice = ""
+        self._draw_verdict()
+        self._render_report()
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
 
     def _worker(self, path):
@@ -428,92 +454,176 @@ class SandCheckApp:
             self.status_key = payload if i18n.has(payload) else "ready"
             self.status.config(text=self.t(payload) if i18n.has(payload) else payload)
         elif kind == "static":
-            self._render_static(payload)
-        elif kind == "dynamic":
-            self._render_dynamic(payload)
+            self.current_static = payload
+            self._render_report()
         elif kind == "verdict":
-            self._render_verdict(payload)
+            self.current_verdict = payload
+            self._draw_verdict()
+            self._render_report()
         elif kind == "error":
-            message = self.t(payload) if i18n.has(payload) else self.t("err_generic", err=payload)
-            self._append(f"\n[!] {message}\n")
+            self.notice = (
+                self.t(payload) if i18n.has(payload) else self.t("err_generic", err=payload)
+            )
+            self._render_report()
         elif kind == "done":
             self.busy = False
             self.status_key = "ready"
             self.status.config(text=self.t("ready"))
 
-    def _render_static(self, s):
-        lines = [
-            self.t("static_header"),
-            self.t("static_type", type=s["detected_type"], ext=s["extension"]),
-            self.t("static_size", size=s["file_size"]),
-            f"SHA-256: {s['sha256']}",
-            f"MD5: {s['md5']}",
-            self.t("static_entropy", value=s["entropy"]),
-        ]
-        if s["extension_mismatch"]:
-            lines.append(self.t("warn_mismatch"))
-        if s["double_extension"]:
-            lines.append(self.t("warn_double"))
-        if s["suspicious_strings"]:
-            lines.append(self.t("static_sus", items=", ".join(s["suspicious_strings"])))
-        if s["urls"]:
-            lines.append(self.t("static_urls", items=", ".join(s["urls"][:10])))
-        self._append("\n".join(lines) + "\n")
+    def _render_report(self):
+        s = self.current_static
+        v = self.current_verdict
+        box = self.report_box
+        box.config(state="normal")
+        box.delete("1.0", "end")
 
-    def _render_dynamic(self, d):
-        lines = ["\n" + self.t("dynamic_header")]
-        lines.append(
-            self.t(
-                "dynamic_launched",
-                launched=d.get("launched"),
-                seconds=d.get("observed_seconds"),
+        if s:
+            self._write(self.t("section_file"), "section")
+            rows = [
+                (self.t("file_name_row"), s["file_name"]),
+                (self.t("file_type_row"), s["detected_type"]),
+                (
+                    self.t("file_size_row"),
+                    self.t(
+                        "size_bytes",
+                        mb=f"{s['file_size'] / (1024 * 1024):.1f}",
+                        bytes=s["file_size"],
+                    ),
+                ),
+            ]
+            for label, value in rows:
+                self._write(f"{label}: {value}", "row")
+            self._write(self.t("file_hash_row") + ":", "row")
+            self._write(s["sha256"], "mono")
+
+        if self.notice:
+            self._write(self.notice, "note")
+
+        if v:
+            static_cards = [c for c in v["cards"] if c["key"] not in i18n.DYNAMIC_KEYS]
+            dynamic_cards = [c for c in v["cards"] if c["key"] in i18n.DYNAMIC_KEYS]
+
+            if static_cards:
+                self._write(self.t("section_behavior"), "section")
+                for card in static_cards:
+                    self._write_card(card)
+
+            if v["analyzed_dynamically"]:
+                self._write(self.t("section_sandbox"), "section")
+                self._write(
+                    self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS), "body"
+                )
+                if dynamic_cards:
+                    for card in dynamic_cards:
+                        self._write_card(card)
+                else:
+                    self._write(self.t("nothing_found"), "body")
+
+            self._write(self.t("section_advice"), "section")
+            self._write(self.t("advice_" + v["level"], seconds=config.OBSERVE_SECONDS), "advice")
+            if not v["analyzed_dynamically"]:
+                self._write(self.t("advice_static_only"), "advice")
+
+        box.config(state="disabled")
+
+    def _write(self, text, tag):
+        self.report_box.insert("end", text + "\n", tag)
+
+    def _write_card(self, card):
+        severity = card["severity"]
+        marker = {"danger": "●", "warn": "●", "info": "●"}[severity]
+        self.report_box.insert("end", marker + " ", "dot_" + severity)
+        self.report_box.insert("end", self.t(card["key"], **card["params"]) + "\n", "title")
+        self._write(self.t(card["key"] + "_desc", **card["params"]), "body")
+        items = card["params"].get("items")
+        if items and card["key"].startswith("cat_"):
+            self._write(self.t("found_markers", items=items), "mono")
+
+    def _draw_verdict(self, event=None):
+        canvas = self.verdict_canvas
+        canvas.delete("all")
+        width = canvas.winfo_width()
+        if width <= 1:
+            return
+        C = self.C
+        v = self.current_verdict
+        if not v:
+            canvas.create_rectangle(
+                0, 0, width, 76, fill=C["surface"], outline=C["border"]
             )
-        )
-        fields = [
-            ("f_processes", "new_processes"),
-            ("f_services", "new_services"),
-            ("f_tasks", "new_tasks"),
-            ("f_autoruns", "new_autoruns"),
-            ("f_files", "new_files"),
-            ("f_connections", "new_connections"),
-        ]
-        for label_key, key in fields:
-            vals = d.get(key) or []
-            if vals:
-                shown = ", ".join(str(v) for v in vals[:15])
-                lines.append(f"{self.t(label_key)} ({len(vals)}): {shown}")
-        self._append("\n".join(lines) + "\n")
+            canvas.create_text(
+                width // 2,
+                38,
+                text=self.t("drop_sub"),
+                fill=C["muted"],
+                font=("Segoe UI", 10),
+            )
+            return
 
-    def _render_verdict(self, v):
-        self.current_verdict = v
-        self._render_verdict_banner(v)
-        lines = ["\n" + self.t("verdict_header")]
-        for key, params in v["indicators"]:
-            lines.append(" - " + self.t(key, **params))
-        if not v["indicators"]:
-            lines.append(self.t("no_indicators"))
-        self._append("\n".join(lines) + "\n")
-
-    def _render_verdict_banner(self, v):
-        color = LEVEL_COLORS.get(v["level"], self.C["border"])
-        fg = LEVEL_TEXT_COLORS.get(v["level"], self.C["text"])
-        self.verdict_label.config(
-            text=self.t("verdict_line", level=self.t("level_" + v["level"]), score=v["score"]),
-            bg=color,
-            fg=fg,
+        base = LEVEL_COLORS[v["level"]]
+        end = _shade(base, 0.72)
+        steps = max(width // 4, 1)
+        for i in range(steps):
+            x0 = i * width / steps
+            canvas.create_rectangle(
+                x0, 0, x0 + width / steps + 1, 76,
+                fill=_lerp(base, end, i / steps), outline="",
+            )
+        fg = LEVEL_TEXT_COLORS[v["level"]]
+        canvas.create_text(
+            22, 26,
+            text=self.t("level_" + v["level"]),
+            fill=fg, font=("Segoe UI", 16, "bold"), anchor="w",
         )
+        canvas.create_text(
+            width - 22, 26,
+            text=f"{v['score']}/100",
+            fill=fg, font=("Segoe UI", 16, "bold"), anchor="e",
+        )
+        track_x0, track_x1 = 22, width - 22
+        canvas.create_rectangle(
+            track_x0, 50, track_x1, 58, fill=_shade(base, 0.55), outline=""
+        )
+        filled = track_x0 + (track_x1 - track_x0) * v["score"] / 100
+        canvas.create_rectangle(track_x0, 50, filled, 58, fill=fg, outline="")
 
     def _append(self, text):
         self.report_box.config(state="normal")
-        self.report_box.insert("end", text)
+        self.report_box.insert("end", text + "\n", "note")
         self.report_box.see("end")
         self.report_box.config(state="disabled")
 
-    def _set_report(self, text):
-        self.report_box.config(state="normal")
-        self.report_box.delete("1.0", "end")
-        self.report_box.insert("end", text)
-        self.report_box.config(state="disabled")
+
+def _rgb(color):
+    return tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
+
+
+def _hex(rgb):
+    return "#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in rgb)
+
+
+def _lerp(c1, c2, t):
+    a, b = _rgb(c1), _rgb(c2)
+    return _hex(a[i] + (b[i] - a[i]) * t for i in range(3))
+
+
+def _shade(color, factor):
+    return _hex(c * factor for c in _rgb(color))
+
+
+def _native_env():
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("SNAP", "GTK_", "GDK_", "GIO_", "VSCODE_"))
+        and k not in ("LD_LIBRARY_PATH", "LD_PRELOAD", "LOCPATH", "GSETTINGS_SCHEMA_DIR")
+    }
+    env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
+    for key in ("XDG_DATA_DIRS", "XDG_CONFIG_DIRS"):
+        original = os.environ.get(key + "_VSCODE_SNAP_ORIG")
+        if original:
+            env[key] = original
+    return env
 
 
 def scrolled_text(parent, C):
