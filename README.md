@@ -1,4 +1,4 @@
-# FileChecker
+# SandCheck
 
 A Windows application: drop a file and it is analyzed inside an isolated virtual environment (Windows Sandbox) without ever running on your host system.
 

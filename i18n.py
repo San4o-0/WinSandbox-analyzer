@@ -1,8 +1,7 @@
 STRINGS = {
     "uk": {
-        "app_title": "FileChecker — перевірка файлів у пісочниці",
-        "app_name": "FileChecker",
-        "subtitle": "перевірка файлів у пісочниці",
+        "app_title": "SandCheck — перевірка файлів у пісочниці",
+        "subtitle": "кинь файл — отримай вердикт",
         "drop_hint": "Перетягніть файл сюди",
         "drop_sub": "або натисніть «Обрати файл»",
         "choose_file": "Обрати файл",
@@ -57,9 +56,8 @@ STRINGS = {
         "theme_light": "Світла",
     },
     "en": {
-        "app_title": "FileChecker — sandbox file analysis",
-        "app_name": "FileChecker",
-        "subtitle": "sandbox file analysis",
+        "app_title": "SandCheck — sandbox file analysis",
+        "subtitle": "drop a file — get a verdict",
         "drop_hint": "Drag & drop a file here",
         "drop_sub": "or click “Choose file”",
         "choose_file": "Choose file",

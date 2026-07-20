@@ -1,6 +1,9 @@
 import json
 import os
 import queue
+import shutil
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
@@ -60,7 +63,7 @@ LEVEL_TEXT_COLORS = {
 }
 
 
-class FileCheckerApp:
+class SandCheckApp:
     def __init__(self, root):
         self.root = root
         self.settings = app_settings.load()
@@ -88,11 +91,25 @@ class FileCheckerApp:
 
         header = tk.Frame(self.root, bg=C["bg"])
         header.pack(fill="x", padx=24, pady=(20, 12))
+        logo = tk.Canvas(
+            header, width=32, height=32, bg=C["bg"], highlightthickness=0
+        )
+        logo.create_oval(2, 2, 30, 30, fill=C["accent"], outline="")
+        logo.create_line(10, 17, 15, 22, fill="#ffffff", width=3, capstyle="round")
+        logo.create_line(15, 22, 23, 11, fill="#ffffff", width=3, capstyle="round")
+        logo.pack(side="left", padx=(0, 10), pady=(2, 0))
         tk.Label(
             header,
-            text=self.t("app_name"),
+            text="Sand",
             bg=C["bg"],
             fg=C["text"],
+            font=("Segoe UI", 18, "bold"),
+        ).pack(side="left")
+        tk.Label(
+            header,
+            text="Check",
+            bg=C["bg"],
+            fg=C["accent"],
             font=("Segoe UI", 18, "bold"),
         ).pack(side="left")
         tk.Label(
@@ -315,9 +332,23 @@ class FileCheckerApp:
         self._zone_sub.config(bg=C["surface"])
 
     def _choose_file(self):
-        path = filedialog.askopenfilename()
+        path = self._pick_file()
         if path:
             self._start_check(path)
+
+    def _pick_file(self):
+        if sys.platform.startswith("linux") and shutil.which("zenity"):
+            try:
+                proc = subprocess.run(
+                    ["zenity", "--file-selection", "--title", self.t("choose_file")],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                return proc.stdout.strip() if proc.returncode == 0 else ""
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        return filedialog.askopenfilename()
 
     def _on_drop(self, event):
         raw = event.data.strip()
@@ -546,7 +577,7 @@ def main():
         root = TkinterDnD.Tk()
     else:
         root = tk.Tk()
-    FileCheckerApp(root)
+    SandCheckApp(root)
     root.mainloop()
 
 

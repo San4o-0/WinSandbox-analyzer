@@ -1,9 +1,9 @@
 import os
 
-APP_NAME = "FileChecker"
-BASE_DIR = os.path.join(os.path.expanduser("~"), "FileChecker")
+APP_NAME = "SandCheck"
+BASE_DIR = os.path.join(os.path.expanduser("~"), "SandCheck")
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
-LOG_FILE = os.path.join(BASE_DIR, "filechecker.log")
+LOG_FILE = os.path.join(BASE_DIR, "sandcheck.log")
 
 MAX_FILE_SIZE_MB = 500
 SANDBOX_MEMORY_MB = 2048
