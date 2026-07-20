@@ -28,6 +28,7 @@ THEMES = {
         "bg": "#0f1115",
         "surface": "#171a21",
         "surface_hover": "#1d222c",
+        "chip": "#222732",
         "border": "#2a2f3a",
         "accent": "#4f8cff",
         "accent_dark": "#3d74e0",
@@ -40,6 +41,7 @@ THEMES = {
         "bg": "#f2f4f8",
         "surface": "#ffffff",
         "surface_hover": "#f6f8fc",
+        "chip": "#eef1f6",
         "border": "#d9dee7",
         "accent": "#3b76e8",
         "accent_dark": "#2f61c4",
@@ -56,14 +58,19 @@ LEVEL_COLORS = {
     "dangerous": "#ef4444",
 }
 
+SEVERITY_COLORS = {
+    "danger": "#ef4444",
+    "warn": "#f59e0b",
+    "info": "#4f8cff",
+}
+
+SEVERITY_ICONS = {"danger": "⛔", "warn": "⚠", "info": "ⓘ"}
+
 STEP_KEYS = ("status_static", "sandbox_start", "sandbox_analyzing")
 STEP_LABELS = ("step_inspect", "step_sandbox", "step_watch")
 
-LEVEL_TEXT_COLORS = {
-    "clean": "#06301a",
-    "suspicious": "#3b2703",
-    "dangerous": "#ffffff",
-}
+UI_FONT = "Segoe UI"
+MONO_FONT = "Consolas"
 
 
 class SandCheckApp:
@@ -85,8 +92,9 @@ class SandCheckApp:
         self.spinner_angle = 0
         self.spinner_job = None
         self.score_shown = 0
-        self.root.geometry("860x680")
-        self.root.minsize(760, 560)
+        self.wrap_labels = []
+        self.root.geometry("1040x740")
+        self.root.minsize(900, 620)
         self._build_ui()
         self.root.after(100, self._poll_queue)
 
@@ -101,115 +109,130 @@ class SandCheckApp:
         C = self.C
         self.root.title(self.t("app_title"))
         self.root.configure(bg=C["bg"])
+        self.wrap_labels = []
 
-        header = tk.Frame(self.root, bg=C["bg"])
-        header.pack(fill="x", padx=24, pady=(20, 12))
-        logo = tk.Canvas(
-            header, width=32, height=32, bg=C["bg"], highlightthickness=0
-        )
-        logo.create_oval(2, 2, 30, 30, fill=C["accent"], outline="")
-        logo.create_line(10, 17, 15, 22, fill="#ffffff", width=3, capstyle="round")
-        logo.create_line(15, 22, 23, 11, fill="#ffffff", width=3, capstyle="round")
-        logo.pack(side="left", padx=(0, 10), pady=(2, 0))
-        tk.Label(
-            header,
-            text="Sand",
-            bg=C["bg"],
-            fg=C["text"],
-            font=("Segoe UI", 18, "bold"),
-        ).pack(side="left")
-        tk.Label(
-            header,
-            text="Check",
-            bg=C["bg"],
-            fg=C["accent"],
-            font=("Segoe UI", 18, "bold"),
-        ).pack(side="left")
-        tk.Label(
-            header,
-            text=self.t("subtitle"),
-            bg=C["bg"],
-            fg=C["muted"],
-            font=("Segoe UI", 10),
-        ).pack(side="left", padx=(12, 0), pady=(7, 0))
-        tk.Button(
-            header,
-            text="⚙",
-            command=self._open_settings,
-            bg=C["bg"],
-            fg=C["muted"],
-            activebackground=C["bg"],
-            activeforeground=C["text"],
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            cursor="hand2",
-            font=("Segoe UI", 14),
-        ).pack(side="right")
+        self._build_header()
 
-        top = tk.Frame(self.root, bg=C["bg"])
-        top.pack(fill="x", padx=24)
+        body = tk.Frame(self.root, bg=C["bg"])
+        body.pack(fill="both", expand=True, padx=24, pady=(4, 20))
+        body.columnconfigure(0, minsize=300)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
 
-        self.drop_zone = tk.Frame(
-            top,
-            bg=C["surface"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=C["border"],
-            highlightcolor=C["border"],
-        )
-        self.drop_zone.pack(fill="x")
+        left = tk.Frame(body, bg=C["bg"])
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        right = tk.Frame(body, bg=C["bg"])
+        right.grid(row=0, column=1, sticky="nsew")
+
+        self._build_left(left)
+        self._build_right(right)
+
         self._render_zone()
+        self._draw_verdict()
+        self._render_findings()
 
-        btns = tk.Frame(top, bg=C["bg"])
-        btns.pack(fill="x", pady=(14, 4))
-        self.choose_btn = tk.Button(
-            btns,
-            text=self.t("choose_file"),
-            command=self._choose_file,
-            bg=C["surface"] if self.busy else C["accent"],
-            fg=C["muted"] if self.busy else "#ffffff",
-            activebackground=C["accent_dark"],
-            activeforeground="#ffffff",
-            disabledforeground=C["muted"],
-            state="disabled" if self.busy else "normal",
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            cursor="watch" if self.busy else "hand2",
-            font=("Segoe UI", 10, "bold"),
-            padx=20,
-            pady=8,
-        )
-        self.choose_btn.pack(side="left")
-        self.status = tk.Label(
-            btns,
-            text=self.t(self.status_key),
-            bg=C["bg"],
-            fg=C["accent"] if self.busy else C["muted"],
-            font=("Segoe UI", 10, "bold" if self.busy else "normal"),
-        )
-        self.status.pack(side="left", padx=14)
+    def _build_header(self):
+        C = self.C
+        header = tk.Frame(self.root, bg=C["bg"])
+        header.pack(fill="x", padx=24, pady=(18, 10))
+        logo = tk.Canvas(header, width=30, height=30, bg=C["bg"], highlightthickness=0)
+        logo.create_oval(1, 1, 29, 29, fill=C["accent"], outline="")
+        logo.create_line(9, 16, 14, 21, fill="#ffffff", width=3, capstyle="round")
+        logo.create_line(14, 21, 22, 10, fill="#ffffff", width=3, capstyle="round")
+        logo.pack(side="left", padx=(0, 10))
+        tk.Label(header, text="Sand", bg=C["bg"], fg=C["text"],
+                 font=(UI_FONT, 17, "bold")).pack(side="left")
+        tk.Label(header, text="Check", bg=C["bg"], fg=C["accent"],
+                 font=(UI_FONT, 17, "bold")).pack(side="left")
+        tk.Label(header, text=self.t("subtitle"), bg=C["bg"], fg=C["muted"],
+                 font=(UI_FONT, 9)).pack(side="left", padx=(12, 0), pady=(6, 0))
+        gear = tk.Label(header, text="⚙", bg=C["bg"], fg=C["muted"],
+                        font=(UI_FONT, 14), cursor="hand2")
+        gear.pack(side="right")
+        gear.bind("<Button-1>", lambda e: self._open_settings())
+        gear.bind("<Enter>", lambda e: gear.config(fg=C["text"]))
+        gear.bind("<Leave>", lambda e: gear.config(fg=C["muted"]))
 
-        self.progress = tk.Canvas(
-            self.root, height=4, bg=C["surface"], highlightthickness=0
-        )
-        self.progress.pack(fill="x", padx=24, pady=(6, 0))
+    def _build_left(self, parent):
+        C = self.C
+        self.drop_zone = tk.Frame(parent, bg=C["surface"], bd=0, highlightthickness=1,
+                                  highlightbackground=C["border"], highlightcolor=C["border"])
+        self.drop_zone.pack(fill="x")
+
+        self.progress = tk.Canvas(parent, height=3, bg=C["surface"], highlightthickness=0)
+        self.progress.pack(fill="x", pady=(6, 0))
         if not self.busy:
             self.progress.pack_forget()
 
-        self.verdict_canvas = tk.Canvas(
-            self.root, height=76, bg=C["bg"], highlightthickness=0
+        self.choose_btn = tk.Button(
+            parent, text=self.t("choose_file"), command=self._choose_file,
+            bg=C["surface"] if self.busy else C["accent"],
+            fg=C["muted"] if self.busy else "#ffffff",
+            activebackground=C["accent_dark"], activeforeground="#ffffff",
+            disabledforeground=C["muted"], state="disabled" if self.busy else "normal",
+            relief="flat", bd=0, highlightthickness=0,
+            cursor="watch" if self.busy else "hand2",
+            font=(UI_FONT, 10, "bold"), pady=9,
         )
-        self.verdict_canvas.pack(fill="x", padx=24, pady=(12, 0))
+        self.choose_btn.pack(fill="x", pady=(12, 0))
+        self.status = tk.Label(parent, text=self.t(self.status_key), bg=C["bg"],
+                               fg=C["accent"] if self.busy else C["muted"],
+                               font=(UI_FONT, 9, "bold" if self.busy else "normal"),
+                               anchor="w", justify="left", wraplength=290)
+        self.status.pack(fill="x", pady=(8, 0))
+
+        self.file_card = tk.Frame(parent, bg=C["bg"])
+        self.file_card.pack(fill="x", pady=(14, 0))
+        self.advice_card = tk.Frame(parent, bg=C["bg"])
+        self.advice_card.pack(fill="both", expand=True, pady=(12, 0))
+
+    def _build_right(self, parent):
+        C = self.C
+        self.verdict_card = tk.Frame(parent, bg=C["surface"], bd=0, highlightthickness=1,
+                                     highlightbackground=C["border"], highlightcolor=C["border"])
+        self.verdict_card.pack(fill="x")
+        self.verdict_canvas = tk.Canvas(self.verdict_card, height=104, bg=C["surface"],
+                                        highlightthickness=0)
+        self.verdict_canvas.pack(fill="x")
         self.verdict_canvas.bind("<Configure>", self._draw_verdict)
 
-        self.report_box = scrolled_text(self.root, C)
-        self.report_box.pack(fill="both", expand=True, padx=24, pady=(12, 22))
-        self._configure_tags()
-        self._draw_verdict()
-        if self.current_verdict:
-            self._render_report()
+        self.findings_title = tk.Label(parent, text=self.t("section_behavior"), bg=C["bg"],
+                                       fg=C["text"], font=(UI_FONT, 12, "bold"), anchor="w")
+        self.findings_title.pack(fill="x", pady=(16, 8))
+
+        holder = tk.Frame(parent, bg=C["bg"])
+        holder.pack(fill="both", expand=True)
+        self.scroll_canvas = tk.Canvas(holder, bg=C["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(holder, command=self.scroll_canvas.yview,
+                                  style="App.Vertical.TScrollbar")
+        _style_scrollbar(holder, C)
+        self.scroll_canvas.config(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.scroll_canvas.pack(side="left", fill="both", expand=True)
+        self.findings = tk.Frame(self.scroll_canvas, bg=C["bg"])
+        self.findings_window = self.scroll_canvas.create_window(
+            (0, 0), window=self.findings, anchor="nw"
+        )
+        self.findings.bind(
+            "<Configure>",
+            lambda e: self.scroll_canvas.config(scrollregion=self.scroll_canvas.bbox("all")),
+        )
+        self.scroll_canvas.bind("<Configure>", self._on_scroll_resize)
+        for widget in (self.scroll_canvas, self.findings):
+            widget.bind("<MouseWheel>", self._on_wheel)
+            widget.bind("<Button-4>", self._on_wheel)
+            widget.bind("<Button-5>", self._on_wheel)
+
+    def _on_scroll_resize(self, event):
+        self.scroll_canvas.itemconfig(self.findings_window, width=event.width)
+        for label, pad in self.wrap_labels:
+            label.config(wraplength=max(event.width - pad, 120))
+
+    def _on_wheel(self, event):
+        delta = 1 if getattr(event, "num", 0) == 5 else -1 if getattr(event, "num", 0) == 4 else 0
+        if delta == 0:
+            delta = -1 if event.delta > 0 else 1
+        self.scroll_canvas.yview_scroll(delta, "units")
 
     def _render_zone(self):
         C = self.C
@@ -220,7 +243,6 @@ class SandCheckApp:
         for widget in zone.winfo_children():
             widget.destroy()
         zone.config(bg=C["surface"], highlightbackground=C["border"])
-
         if self.stage == "checking":
             self._build_zone_checking()
         elif self.stage == "done":
@@ -231,70 +253,71 @@ class SandCheckApp:
     def _build_zone_idle(self):
         C = self.C
         zone = self.drop_zone
-        icon = tk.Label(zone, text="⬇", bg=C["surface"], fg=C["accent"],
-                        font=("Segoe UI", 26, "bold"))
-        icon.pack(pady=(28, 2))
+        badge = tk.Canvas(zone, width=48, height=48, bg=C["surface"], highlightthickness=0)
+        badge.create_rectangle(0, 0, 48, 48, fill=C["chip"], outline="")
+        badge.create_line(24, 16, 24, 30, fill=C["accent"], width=3, capstyle="round")
+        badge.create_line(18, 24, 24, 30, fill=C["accent"], width=3, capstyle="round")
+        badge.create_line(30, 24, 24, 30, fill=C["accent"], width=3, capstyle="round")
+        badge.create_line(16, 35, 32, 35, fill=C["accent"], width=3, capstyle="round")
+        badge.pack(pady=(34, 14))
         hint = tk.Label(zone, text=self.t("drop_hint"), bg=C["surface"], fg=C["text"],
-                        font=("Segoe UI", 12, "bold"))
+                        font=(UI_FONT, 11, "bold"))
         hint.pack()
         sub = tk.Label(zone, text=self.t("drop_sub"), bg=C["surface"], fg=C["muted"],
-                       font=("Segoe UI", 10))
-        sub.pack(pady=(4, 28))
-
-        self._zone_widgets = (zone, icon, hint, sub)
-        for widget in self._zone_widgets:
+                       font=(UI_FONT, 9))
+        sub.pack(pady=(4, 34))
+        widgets = (zone, badge, hint, sub)
+        for widget in widgets:
             widget.bind("<Enter>", self._zone_hover_on)
             widget.bind("<Leave>", self._zone_hover_off)
         if DND_AVAILABLE:
-            for widget in self._zone_widgets:
+            for widget in widgets:
                 widget.drop_target_register(DND_FILES)
                 widget.dnd_bind("<<Drop>>", self._on_drop)
 
     def _build_zone_checking(self):
         C = self.C
         zone = self.drop_zone
-        self._zone_widgets = (zone,)
-        head = tk.Frame(zone, bg=C["surface"])
-        head.pack(pady=(22, 14))
-        self.spinner = tk.Canvas(head, width=26, height=26, bg=C["surface"],
+        self.spinner = tk.Canvas(zone, width=34, height=34, bg=C["surface"],
                                  highlightthickness=0)
-        self.spinner.pack(side="left", padx=(0, 10))
-        tk.Label(head, text=self.checked_name or self.t("check_in_progress"),
-                 bg=C["surface"], fg=C["text"], font=("Segoe UI", 11, "bold")).pack(side="left")
-
+        self.spinner.pack(pady=(26, 10))
+        name = self.checked_name or self.t("check_in_progress")
+        tk.Label(zone, text=_ellipsis(name, 30), bg=C["surface"], fg=C["text"],
+                 font=(UI_FONT, 10, "bold")).pack()
         steps = tk.Frame(zone, bg=C["surface"])
-        steps.pack(pady=(0, 22))
+        steps.pack(pady=(12, 26), padx=20, anchor="w")
         for index, key in enumerate(STEP_LABELS):
             done = index < self.step_index
             active = index == self.step_index
             row = tk.Frame(steps, bg=C["surface"])
-            row.pack(anchor="w", pady=2)
+            row.pack(anchor="w", pady=3)
             mark = "✓" if done else ("●" if active else "○")
             color = LEVEL_COLORS["clean"] if done else (C["accent"] if active else C["muted"])
             tk.Label(row, text=mark, bg=C["surface"], fg=color,
-                     font=("Segoe UI", 10, "bold"), width=2).pack(side="left")
+                     font=(UI_FONT, 9, "bold"), width=2).pack(side="left")
             tk.Label(row, text=self.t(key), bg=C["surface"],
                      fg=C["text"] if active else C["muted"],
-                     font=("Segoe UI", 10, "bold" if active else "normal")).pack(side="left")
+                     font=(UI_FONT, 9, "bold" if active else "normal")).pack(side="left")
         self._animate_spinner()
 
     def _build_zone_done(self):
         C = self.C
         zone = self.drop_zone
-        self._zone_widgets = (zone,)
-        tk.Label(zone, text="✓", bg=C["surface"], fg=LEVEL_COLORS["clean"],
-                 font=("Segoe UI", 24, "bold")).pack(pady=(26, 2))
+        badge = tk.Canvas(zone, width=44, height=44, bg=C["surface"], highlightthickness=0)
+        badge.create_oval(2, 2, 42, 42, outline=LEVEL_COLORS["clean"], width=2)
+        badge.create_line(14, 23, 20, 29, fill=LEVEL_COLORS["clean"], width=3, capstyle="round")
+        badge.create_line(20, 29, 31, 16, fill=LEVEL_COLORS["clean"], width=3, capstyle="round")
+        badge.pack(pady=(28, 10))
         tk.Label(zone, text=self.t("done_title"), bg=C["surface"], fg=C["text"],
-                 font=("Segoe UI", 12, "bold")).pack()
+                 font=(UI_FONT, 11, "bold")).pack()
         tk.Label(zone, text=self.t("done_sub"), bg=C["surface"], fg=C["muted"],
-                 font=("Segoe UI", 10)).pack(pady=(4, 8))
+                 font=(UI_FONT, 9), wraplength=250).pack(pady=(4, 10))
         again = tk.Button(zone, text=self.t("check_another"), command=self._choose_file,
                           bg=C["surface"], fg=C["accent"], activebackground=C["surface_hover"],
                           activeforeground=C["accent"], relief="flat", bd=0,
-                          highlightthickness=1, highlightbackground=C["accent"],
-                          cursor="hand2", font=("Segoe UI", 10, "bold"), padx=18, pady=6)
-        again.pack(pady=(0, 24))
-        self._zone_widgets = (zone,)
+                          highlightthickness=1, highlightbackground=C["border"],
+                          cursor="hand2", font=(UI_FONT, 9, "bold"), padx=16, pady=6)
+        again.pack(pady=(0, 26))
         if DND_AVAILABLE:
             zone.drop_target_register(DND_FILES)
             zone.dnd_bind("<<Drop>>", self._on_drop)
@@ -303,42 +326,197 @@ class SandCheckApp:
         if self.stage != "checking" or not self.spinner.winfo_exists():
             self.spinner_job = None
             return
-        self.spinner_angle = (self.spinner_angle + 12) % 360
+        self.spinner_angle = (self.spinner_angle + 11) % 360
         C = self.C
         self.spinner.delete("all")
-        self.spinner.create_oval(3, 3, 23, 23, outline=C["border"], width=3)
-        self.spinner.create_arc(3, 3, 23, 23, start=self.spinner_angle, extent=110,
+        self.spinner.create_oval(4, 4, 30, 30, outline=C["border"], width=3)
+        self.spinner.create_arc(4, 4, 30, 30, start=self.spinner_angle, extent=100,
                                 style="arc", outline=C["accent"], width=3)
         self.spinner_job = self.root.after(40, self._animate_spinner)
 
-    def _configure_tags(self):
+    def _zone_hover_on(self, event=None):
         C = self.C
-        box = self.report_box
-        box.tag_configure("section", font=("Segoe UI", 12, "bold"), foreground=C["text"],
-                          spacing1=16, spacing3=8)
-        box.tag_configure("title", font=("Segoe UI", 10, "bold"), foreground=C["text"],
-                          spacing1=8, spacing3=2)
-        box.tag_configure("body", font=("Segoe UI", 10), foreground=C["muted"],
-                          lmargin1=22, lmargin2=22, spacing3=4)
-        box.tag_configure("mono", font=("Consolas", 9), foreground=C["report_fg"],
-                          lmargin1=22, lmargin2=22, spacing3=2)
-        box.tag_configure("row", font=("Segoe UI", 10), foreground=C["report_fg"],
-                          spacing3=3)
-        box.tag_configure("note", font=("Segoe UI", 10, "italic"), foreground=C["muted"],
-                          spacing1=6, spacing3=6)
-        box.tag_configure("advice", font=("Segoe UI", 10), foreground=C["text"],
-                          spacing3=6)
-        for name, color in (
-            ("danger", LEVEL_COLORS["dangerous"]),
-            ("warn", LEVEL_COLORS["suspicious"]),
-            ("info", C["accent"]),
-        ):
-            box.tag_configure("dot_" + name, font=("Segoe UI", 11, "bold"), foreground=color)
+        self.drop_zone.config(highlightbackground=C["accent"], highlightcolor=C["accent"])
+
+    def _zone_hover_off(self, event=None):
+        C = self.C
+        self.drop_zone.config(highlightbackground=C["border"], highlightcolor=C["border"])
+
+    def _draw_verdict(self, event=None):
+        canvas = self.verdict_canvas
+        canvas.delete("all")
+        width = canvas.winfo_width()
+        if width <= 1:
+            return
+        C = self.C
+        canvas.config(bg=C["surface"])
+        v = self.current_verdict
+
+        if not v:
+            canvas.create_text(24, 40, text=self.t("awaiting_verdict"), fill=C["muted"],
+                               font=(UI_FONT, 15, "bold"), anchor="w")
+            canvas.create_text(24, 64, text=self.t("awaiting_sub"), fill=C["muted"],
+                               font=(UI_FONT, 9), anchor="w")
+            return
+
+        color = LEVEL_COLORS[v["level"]]
+        canvas.create_text(24, 26, text=self.t("verdict_eyebrow"), fill=C["muted"],
+                           font=(UI_FONT, 8, "bold"), anchor="w")
+        canvas.create_text(24, 52, text=self.t("level_" + v["level"]), fill=color,
+                           font=(UI_FONT, 20, "bold"), anchor="w")
+        canvas.create_text(width - 24, 26, text=self.t("score_eyebrow"), fill=C["muted"],
+                           font=(UI_FONT, 8, "bold"), anchor="e")
+        canvas.create_text(width - 60, 54, text=str(self.score_shown), fill=C["text"],
+                           font=(UI_FONT, 22, "bold"), anchor="e")
+        canvas.create_text(width - 24, 58, text="/100", fill=C["muted"],
+                           font=(UI_FONT, 12), anchor="e")
+        track_x0, track_x1 = 24, width - 24
+        canvas.create_rectangle(track_x0, 82, track_x1, 88, fill=C["chip"], outline="")
+        filled = track_x0 + (track_x1 - track_x0) * self.score_shown / 100
+        canvas.create_rectangle(track_x0, 82, filled, 88, fill=color, outline="")
+
+    def _animate_score(self):
+        target = self.current_verdict["score"] if self.current_verdict else 0
+        if self.score_shown < target:
+            self.score_shown = min(target, self.score_shown + max(1, target // 18))
+            self._draw_verdict()
+            self.root.after(20, self._animate_score)
+        else:
+            self.score_shown = target
+            self._draw_verdict()
+
+    def _render_findings(self):
+        C = self.C
+        for widget in self.findings.winfo_children():
+            widget.destroy()
+        self.wrap_labels = [
+            (label, pad) for label, pad in self.wrap_labels if label.winfo_exists()
+        ]
+        self._render_file_card()
+        self._render_advice_card()
+
+        v = self.current_verdict
+        if not v:
+            tk.Label(self.findings, text=self.t("awaiting_sub"), bg=C["bg"], fg=C["muted"],
+                     font=(UI_FONT, 9), anchor="w").pack(fill="x")
+            return
+
+        cards = list(v["cards"])
+        if not cards:
+            self._simple_card(self.t("nothing_found"), "info")
+            return
+        for card in cards:
+            self._finding_card(card)
+        if v["analyzed_dynamically"]:
+            note = tk.Label(self.findings,
+                            text=self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS),
+                            bg=C["bg"], fg=C["muted"], font=(UI_FONT, 8), anchor="w",
+                            justify="left")
+            note.pack(fill="x", pady=(6, 12))
+            self.wrap_labels.append((note, 20))
+
+    def _card_shell(self, accent):
+        C = self.C
+        outer = tk.Frame(self.findings, bg=C["border"])
+        outer.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(outer, bg=C["surface"])
+        inner.pack(fill="both", expand=True, padx=(3, 1), pady=1)
+        tk.Frame(outer, bg=accent, width=3).place(x=0, y=0, relheight=1)
+        return inner
+
+    def _simple_card(self, text, severity):
+        C = self.C
+        inner = self._card_shell(SEVERITY_COLORS[severity])
+        label = tk.Label(inner, text=text, bg=C["surface"], fg=C["text"],
+                         font=(UI_FONT, 10), anchor="w", justify="left")
+        label.pack(fill="x", padx=16, pady=14)
+        self.wrap_labels.append((label, 60))
+
+    def _finding_card(self, card):
+        C = self.C
+        severity = card["severity"]
+        accent = SEVERITY_COLORS[severity]
+        inner = self._card_shell(accent)
+
+        head = tk.Frame(inner, bg=C["surface"])
+        head.pack(fill="x", padx=16, pady=(14, 2))
+        tk.Label(head, text=SEVERITY_ICONS[severity], bg=C["surface"], fg=accent,
+                 font=(UI_FONT, 10)).pack(side="left", padx=(0, 8))
+        tk.Label(head, text=self.t(card["key"], **card["params"]), bg=C["surface"],
+                 fg=C["text"], font=(UI_FONT, 10, "bold")).pack(side="left")
+
+        desc = tk.Label(inner, text=self.t(card["key"] + "_desc", **card["params"]),
+                        bg=C["surface"], fg=C["muted"], font=(UI_FONT, 9),
+                        anchor="w", justify="left")
+        desc.pack(fill="x", padx=(40, 16), pady=(0, 12))
+        self.wrap_labels.append((desc, 90))
+
+        items = card["params"].get("items")
+        if items and card["key"].startswith("cat_"):
+            chips = tk.Frame(inner, bg=C["surface"])
+            chips.pack(fill="x", padx=(40, 16), pady=(0, 14))
+            for marker in items.split(", ")[:5]:
+                tk.Label(chips, text=marker, bg=C["chip"], fg=C["report_fg"],
+                         font=(MONO_FONT, 8), padx=7, pady=3).pack(side="left", padx=(0, 6))
+
+    def _render_file_card(self):
+        C = self.C
+        for widget in self.file_card.winfo_children():
+            widget.destroy()
+        s = self.current_static
+        if not s:
+            return
+        box = tk.Frame(self.file_card, bg=C["surface"], highlightthickness=1,
+                       highlightbackground=C["border"])
+        box.pack(fill="x")
+        tk.Label(box, text=self.t("section_file").upper(), bg=C["surface"], fg=C["muted"],
+                 font=(UI_FONT, 8, "bold"), anchor="w").pack(fill="x", padx=14, pady=(12, 6))
+        rows = [
+            _ellipsis(s["file_name"], 30),
+            s["detected_type"],
+            self.t("size_bytes", mb=f"{s['file_size'] / (1024 * 1024):.1f}",
+                   bytes=s["file_size"]),
+        ]
+        for index, value in enumerate(rows):
+            tk.Label(box, text=value, bg=C["surface"],
+                     fg=C["text"] if index == 0 else C["muted"],
+                     font=(UI_FONT, 9, "bold" if index == 0 else "normal"),
+                     anchor="w").pack(fill="x", padx=14)
+        tk.Label(box, text=s["sha256"][:32] + "…", bg=C["surface"], fg=C["muted"],
+                 font=(MONO_FONT, 8), anchor="w").pack(fill="x", padx=14, pady=(6, 12))
+
+    def _render_advice_card(self):
+        C = self.C
+        for widget in self.advice_card.winfo_children():
+            widget.destroy()
+        v = self.current_verdict
+        if not v and not self.notice:
+            return
+        outer = tk.Frame(self.advice_card, bg=C["border"])
+        outer.pack(fill="x")
+        inner = tk.Frame(outer, bg=C["surface"])
+        inner.pack(fill="both", expand=True, padx=(3, 1), pady=1)
+        tk.Frame(outer, bg=C["accent"], width=3).place(x=0, y=0, relheight=1)
+        tk.Label(inner, text=self.t("section_advice").upper(), bg=C["surface"], fg=C["muted"],
+                 font=(UI_FONT, 8, "bold"), anchor="w").pack(fill="x", padx=14, pady=(12, 6))
+        if v:
+            text = self.t("advice_" + v["level"], seconds=config.OBSERVE_SECONDS)
+            tk.Label(inner, text=text, bg=C["surface"], fg=C["text"], font=(UI_FONT, 9),
+                     anchor="w", justify="left", wraplength=250).pack(fill="x", padx=14,
+                                                                     pady=(0, 8))
+        if self.notice:
+            notice = (self.t(self.notice) if i18n.has(self.notice)
+                      else self.t("err_generic", err=self.notice))
+            tk.Label(inner, text=notice, bg=C["surface"], fg=C["muted"], font=(UI_FONT, 8),
+                     anchor="w", justify="left", wraplength=250).pack(fill="x", padx=14,
+                                                                     pady=(0, 12))
 
     def _rebuild(self):
-        if self.progress_job is not None:
-            self.root.after_cancel(self.progress_job)
-            self.progress_job = None
+        for job in (self.progress_job, self.spinner_job):
+            if job is not None:
+                self.root.after_cancel(job)
+        self.progress_job = None
+        self.spinner_job = None
         for widget in self.root.winfo_children():
             if not isinstance(widget, tk.Toplevel):
                 widget.destroy()
@@ -354,9 +532,8 @@ class SandCheckApp:
         self.settings_win = win
         win.resizable(False, False)
         win.transient(self.root)
-        win.geometry(
-            "+%d+%d" % (self.root.winfo_rootx() + 240, self.root.winfo_rooty() + 120)
-        )
+        win.geometry("+%d+%d" % (self.root.winfo_rootx() + 300,
+                                 self.root.winfo_rooty() + 140))
         self._render_settings()
 
     def _render_settings(self):
@@ -368,45 +545,32 @@ class SandCheckApp:
         win.configure(bg=C["bg"])
         for widget in win.winfo_children():
             widget.destroy()
-
         body = tk.Frame(win, bg=C["bg"], padx=24, pady=20)
         body.pack(fill="both", expand=True)
-
         rows = [
-            ("lang_label", "language", [("uk", i18n.LANGUAGES["uk"]), ("en", i18n.LANGUAGES["en"])]),
-            ("theme_label", "theme", [("dark", self.t("theme_dark")), ("light", self.t("theme_light"))]),
+            ("lang_label", "language",
+             [("uk", i18n.LANGUAGES["uk"]), ("en", i18n.LANGUAGES["en"])]),
+            ("theme_label", "theme",
+             [("dark", self.t("theme_dark")), ("light", self.t("theme_light"))]),
         ]
         for label_key, setting_key, options in rows:
             row = tk.Frame(body, bg=C["bg"])
             row.pack(fill="x", pady=8)
-            tk.Label(
-                row,
-                text=self.t(label_key),
-                bg=C["bg"],
-                fg=C["text"],
-                font=("Segoe UI", 11, "bold"),
-                width=10,
-                anchor="w",
-            ).pack(side="left")
+            tk.Label(row, text=self.t(label_key), bg=C["bg"], fg=C["text"],
+                     font=(UI_FONT, 10, "bold"), width=10, anchor="w").pack(side="left")
             for value, title in options:
                 active = self.settings[setting_key] == value
-                tk.Button(
-                    row,
-                    text=title,
-                    command=lambda k=setting_key, v=value: self._set_setting(k, v),
-                    bg=C["accent"] if active else C["surface"],
-                    fg="#ffffff" if active else C["text"],
-                    activebackground=C["accent_dark"] if active else C["surface_hover"],
-                    activeforeground="#ffffff" if active else C["text"],
-                    relief="flat",
-                    bd=0,
-                    highlightthickness=1,
-                    highlightbackground=C["accent"] if active else C["border"],
-                    cursor="hand2",
-                    font=("Segoe UI", 10, "bold" if active else "normal"),
-                    padx=16,
-                    pady=6,
-                ).pack(side="left", padx=(0, 8))
+                tk.Button(row, text=title,
+                          command=lambda k=setting_key, v=value: self._set_setting(k, v),
+                          bg=C["accent"] if active else C["surface"],
+                          fg="#ffffff" if active else C["text"],
+                          activebackground=C["accent_dark"] if active else C["surface_hover"],
+                          activeforeground="#ffffff" if active else C["text"],
+                          relief="flat", bd=0, highlightthickness=1,
+                          highlightbackground=C["accent"] if active else C["border"],
+                          cursor="hand2",
+                          font=(UI_FONT, 9, "bold" if active else "normal"),
+                          padx=16, pady=6).pack(side="left", padx=(0, 8))
 
     def _set_setting(self, key, value):
         if self.settings[key] == value:
@@ -415,28 +579,6 @@ class SandCheckApp:
         app_settings.save(self.settings)
         self._rebuild()
         self._render_settings()
-
-    def _zone_hover_on(self, event=None):
-        C = self.C
-        self.drop_zone.config(
-            bg=C["surface_hover"],
-            highlightbackground=C["accent"],
-            highlightcolor=C["accent"],
-        )
-        self._zone_icon.config(bg=C["surface_hover"])
-        self._zone_hint.config(bg=C["surface_hover"])
-        self._zone_sub.config(bg=C["surface_hover"])
-
-    def _zone_hover_off(self, event=None):
-        C = self.C
-        self.drop_zone.config(
-            bg=C["surface"],
-            highlightbackground=C["border"],
-            highlightcolor=C["border"],
-        )
-        self._zone_icon.config(bg=C["surface"])
-        self._zone_hint.config(bg=C["surface"])
-        self._zone_sub.config(bg=C["surface"])
 
     def _choose_file(self):
         path = self._pick_file()
@@ -448,10 +590,7 @@ class SandCheckApp:
             try:
                 proc = subprocess.run(
                     ["zenity", "--file-selection", "--title", self.t("choose_file")],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    env=_native_env(),
+                    capture_output=True, text=True, timeout=600, env=_native_env(),
                 )
                 if proc.returncode == 0:
                     return proc.stdout.strip()
@@ -471,11 +610,11 @@ class SandCheckApp:
 
     def _start_check(self, path):
         if self.busy:
-            self._append(self.t("busy") + "\n")
             return
         size_mb = os.path.getsize(path) / (1024 * 1024)
         if size_mb > config.MAX_FILE_SIZE_MB:
-            self._append(self.t("file_too_big", size=f"{size_mb:.1f}") + "\n")
+            self.notice = self.t("file_too_big", size=f"{size_mb:.1f}")
+            self._render_advice_card()
             return
         self.busy = True
         self.current_verdict = None
@@ -489,23 +628,49 @@ class SandCheckApp:
         self._set_status("status_static")
         self._start_progress()
         self._draw_verdict()
-        self._render_report()
+        self._render_findings()
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
 
     def _set_status(self, key):
         C = self.C
         self.status_key = key
-        self.status.config(
-            text=self.t(key) if i18n.has(key) else key,
-            fg=C["accent"] if self.busy else C["muted"],
-            font=("Segoe UI", 10, "bold" if self.busy else "normal"),
-        )
-        self.choose_btn.config(
-            state="disabled" if self.busy else "normal",
-            bg=C["surface"] if self.busy else C["accent"],
-            fg=C["muted"] if self.busy else "#ffffff",
-            cursor="watch" if self.busy else "hand2",
-        )
+        self.status.config(text=self.t(key) if i18n.has(key) else key,
+                           fg=C["accent"] if self.busy else C["muted"],
+                           font=(UI_FONT, 9, "bold" if self.busy else "normal"))
+        self.choose_btn.config(state="disabled" if self.busy else "normal",
+                               bg=C["surface"] if self.busy else C["accent"],
+                               fg=C["muted"] if self.busy else "#ffffff",
+                               cursor="watch" if self.busy else "hand2")
+
+    def _start_progress(self):
+        self.progress.pack(fill="x", pady=(6, 0), after=self.drop_zone)
+        if self.progress_job is None:
+            self._animate_progress()
+
+    def _stop_progress(self):
+        if self.progress_job is not None:
+            self.root.after_cancel(self.progress_job)
+            self.progress_job = None
+        self.progress.delete("all")
+        self.progress.pack_forget()
+
+    def _animate_progress(self):
+        canvas = self.progress
+        if not self.busy or not canvas.winfo_exists():
+            self.progress_job = None
+            return
+        self.progress_job = self.root.after(16, self._animate_progress)
+        width = canvas.winfo_width()
+        if width <= 1:
+            return
+        C = self.C
+        canvas.delete("all")
+        canvas.create_rectangle(0, 0, width, 3, fill=C["chip"], outline="")
+        span = width * 0.32
+        self.progress_pos = (self.progress_pos + width * 0.013) % (width + span)
+        canvas.create_rectangle(max(self.progress_pos - span, 0), 0,
+                                min(self.progress_pos, width), 3,
+                                fill=C["accent"], outline="")
 
     def _worker(self, path):
         session = None
@@ -513,15 +678,12 @@ class SandCheckApp:
             self.msg_queue.put(("status", "status_static"))
             static_result = static_analysis.analyze(path)
             self.msg_queue.put(("static", static_result))
-
             session = sandbox_manager.create_session(path)
             report = sandbox_manager.run_sandbox(
                 session, progress=lambda m: self.msg_queue.put(("status", m))
             )
-
             result = verdict.evaluate(static_result, report)
             self._save_report(session, static_result, report, result)
-            self.msg_queue.put(("dynamic", report))
             self.msg_queue.put(("verdict", result))
         except sandbox_manager.SandboxError as e:
             static_result = static_analysis.analyze(path)
@@ -536,11 +698,7 @@ class SandCheckApp:
             self.msg_queue.put(("done", None))
 
     def _save_report(self, session, static_result, dynamic_report, result):
-        out = {
-            "verdict": result,
-            "static": static_result,
-            "dynamic": dynamic_report,
-        }
+        out = {"verdict": result, "static": static_result, "dynamic": dynamic_report}
         path = os.path.join(session["shared"], "full_report.json")
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -565,15 +723,15 @@ class SandCheckApp:
                 self._render_zone()
         elif kind == "static":
             self.current_static = payload
-            self._render_report()
+            self._render_file_card()
         elif kind == "verdict":
             self.current_verdict = payload
             self.score_shown = 0
             self._animate_score()
-            self._render_report()
+            self._render_findings()
         elif kind == "error":
             self.notice = payload
-            self._render_report()
+            self._render_advice_card()
         elif kind == "done":
             self.busy = False
             self.stage = "done"
@@ -581,192 +739,22 @@ class SandCheckApp:
             self._render_zone()
             self._set_status("status_done")
 
-    def _render_report(self):
-        s = self.current_static
-        v = self.current_verdict
-        box = self.report_box
-        box.config(state="normal")
-        box.delete("1.0", "end")
 
-        if s:
-            self._write(self.t("section_file"), "section")
-            rows = [
-                (self.t("file_name_row"), s["file_name"]),
-                (self.t("file_type_row"), s["detected_type"]),
-                (
-                    self.t("file_size_row"),
-                    self.t(
-                        "size_bytes",
-                        mb=f"{s['file_size'] / (1024 * 1024):.1f}",
-                        bytes=s["file_size"],
-                    ),
-                ),
-            ]
-            for label, value in rows:
-                self._write(f"{label}: {value}", "row")
-            self._write(self.t("file_hash_row") + ":", "row")
-            self._write(s["sha256"], "mono")
-
-        if self.notice:
-            text = (
-                self.t(self.notice)
-                if i18n.has(self.notice)
-                else self.t("err_generic", err=self.notice)
-            )
-            self._write(text, "note")
-
-        if v:
-            static_cards = [c for c in v["cards"] if c["key"] not in i18n.DYNAMIC_KEYS]
-            dynamic_cards = [c for c in v["cards"] if c["key"] in i18n.DYNAMIC_KEYS]
-
-            if static_cards:
-                self._write(self.t("section_behavior"), "section")
-                for card in static_cards:
-                    self._write_card(card)
-
-            if v["analyzed_dynamically"]:
-                self._write(self.t("section_sandbox"), "section")
-                self._write(
-                    self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS), "body"
-                )
-                if dynamic_cards:
-                    for card in dynamic_cards:
-                        self._write_card(card)
-                else:
-                    self._write(self.t("nothing_found"), "body")
-
-            self._write(self.t("section_advice"), "section")
-            self._write(self.t("advice_" + v["level"], seconds=config.OBSERVE_SECONDS), "advice")
-            if not v["analyzed_dynamically"]:
-                self._write(self.t("advice_static_only"), "advice")
-
-        box.config(state="disabled")
-
-    def _write(self, text, tag):
-        self.report_box.insert("end", text + "\n", tag)
-
-    def _write_card(self, card):
-        severity = card["severity"]
-        marker = {"danger": "●", "warn": "●", "info": "●"}[severity]
-        self.report_box.insert("end", marker + " ", "dot_" + severity)
-        self.report_box.insert("end", self.t(card["key"], **card["params"]) + "\n", "title")
-        self._write(self.t(card["key"] + "_desc", **card["params"]), "body")
-        items = card["params"].get("items")
-        if items and card["key"].startswith("cat_"):
-            self._write(self.t("found_markers", items=items), "mono")
-
-    def _start_progress(self):
-        self.progress.pack(fill="x", padx=24, pady=(6, 0))
-        if self.progress_job is None:
-            self._animate_progress()
-
-    def _stop_progress(self):
-        if self.progress_job is not None:
-            self.root.after_cancel(self.progress_job)
-            self.progress_job = None
-        self.progress.delete("all")
-        self.progress.pack_forget()
-
-    def _animate_progress(self):
-        canvas = self.progress
-        if not self.busy or not canvas.winfo_exists():
-            self.progress_job = None
-            return
-        self.progress_job = self.root.after(16, self._animate_progress)
-        width = canvas.winfo_width()
-        if width <= 1:
-            return
-        canvas.delete("all")
-        C = self.C
-        canvas.create_rectangle(0, 0, width, 4, fill=C["surface"], outline="")
-        span = width * 0.3
-        self.progress_pos = (self.progress_pos + width * 0.012) % (width + span)
-        x0 = self.progress_pos - span
-        canvas.create_rectangle(
-            max(x0, 0), 0, min(self.progress_pos, width), 4,
-            fill=C["accent"], outline="",
-        )
-
-    def _animate_score(self):
-        target = self.current_verdict["score"] if self.current_verdict else 0
-        if self.score_shown < target:
-            self.score_shown = min(target, self.score_shown + max(1, target // 18))
-            self._draw_verdict()
-            self.root.after(20, self._animate_score)
-        else:
-            self.score_shown = target
-            self._draw_verdict()
-
-    def _draw_verdict(self, event=None):
-        canvas = self.verdict_canvas
-        canvas.delete("all")
-        width = canvas.winfo_width()
-        if width <= 1:
-            return
-        C = self.C
-        v = self.current_verdict
-        if not v:
-            canvas.create_rectangle(
-                0, 0, width, 76, fill=C["surface"], outline=C["border"]
-            )
-            canvas.create_text(
-                width // 2,
-                38,
-                text=self.t("check_in_progress") if self.busy else self.t("drop_sub"),
-                fill=C["accent"] if self.busy else C["muted"],
-                font=("Segoe UI", 11, "bold") if self.busy else ("Segoe UI", 10),
-            )
-            return
-
-        base = LEVEL_COLORS[v["level"]]
-        end = _shade(base, 0.72)
-        steps = max(width // 4, 1)
-        for i in range(steps):
-            x0 = i * width / steps
-            canvas.create_rectangle(
-                x0, 0, x0 + width / steps + 1, 76,
-                fill=_lerp(base, end, i / steps), outline="",
-            )
-        fg = LEVEL_TEXT_COLORS[v["level"]]
-        canvas.create_text(
-            22, 26,
-            text=self.t("level_" + v["level"]),
-            fill=fg, font=("Segoe UI", 16, "bold"), anchor="w",
-        )
-        canvas.create_text(
-            width - 22, 26,
-            text=f"{self.score_shown}/100",
-            fill=fg, font=("Segoe UI", 16, "bold"), anchor="e",
-        )
-        track_x0, track_x1 = 22, width - 22
-        canvas.create_rectangle(
-            track_x0, 50, track_x1, 58, fill=_shade(base, 0.55), outline=""
-        )
-        filled = track_x0 + (track_x1 - track_x0) * self.score_shown / 100
-        canvas.create_rectangle(track_x0, 50, filled, 58, fill=fg, outline="")
-
-    def _append(self, text):
-        self.report_box.config(state="normal")
-        self.report_box.insert("end", text + "\n", "note")
-        self.report_box.see("end")
-        self.report_box.config(state="disabled")
+def _ellipsis(text, limit):
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _rgb(color):
-    return tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
-
-
-def _hex(rgb):
-    return "#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in rgb)
-
-
-def _lerp(c1, c2, t):
-    a, b = _rgb(c1), _rgb(c2)
-    return _hex(a[i] + (b[i] - a[i]) * t for i in range(3))
-
-
-def _shade(color, factor):
-    return _hex(c * factor for c in _rgb(color))
+def _style_scrollbar(parent, C):
+    style = ttk.Style(parent)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass
+    style.configure("App.Vertical.TScrollbar", background=C["border"],
+                    troughcolor=C["bg"], bordercolor=C["bg"], lightcolor=C["bg"],
+                    darkcolor=C["bg"], arrowcolor=C["muted"], relief="flat")
+    style.map("App.Vertical.TScrollbar",
+              background=[("active", C["scroll_active"]), ("pressed", C["accent"])])
 
 
 def _native_env():
@@ -784,67 +772,9 @@ def _native_env():
     return env
 
 
-def scrolled_text(parent, C):
-    style = ttk.Style(parent)
-    try:
-        style.theme_use("clam")
-    except tk.TclError:
-        pass
-    style.configure(
-        "App.Vertical.TScrollbar",
-        background=C["border"],
-        troughcolor=C["surface"],
-        bordercolor=C["surface"],
-        lightcolor=C["surface"],
-        darkcolor=C["surface"],
-        arrowcolor=C["muted"],
-        relief="flat",
-    )
-    style.map(
-        "App.Vertical.TScrollbar",
-        background=[("active", C["scroll_active"]), ("pressed", C["accent"])],
-    )
-    frame = tk.Frame(
-        parent,
-        bg=C["surface"],
-        bd=0,
-        highlightthickness=1,
-        highlightbackground=C["border"],
-        highlightcolor=C["border"],
-    )
-    frame.pack_propagate(False)
-    text = tk.Text(
-        frame,
-        wrap="word",
-        font=("Consolas", 10),
-        state="disabled",
-        bg=C["surface"],
-        fg=C["report_fg"],
-        insertbackground=C["text"],
-        selectbackground=C["accent"],
-        selectforeground="#ffffff",
-        relief="flat",
-        bd=0,
-        highlightthickness=0,
-        padx=14,
-        pady=12,
-    )
-    scroll = ttk.Scrollbar(
-        frame, command=text.yview, style="App.Vertical.TScrollbar"
-    )
-    text.config(yscrollcommand=scroll.set)
-    scroll.pack(side="right", fill="y", padx=(0, 2), pady=2)
-    text.pack(side="left", fill="both", expand=True)
-    text.pack = frame.pack
-    return text
-
-
 def main():
     os.makedirs(config.SESSIONS_DIR, exist_ok=True)
-    if DND_AVAILABLE:
-        root = TkinterDnD.Tk()
-    else:
-        root = tk.Tk()
+    root = TkinterDnD.Tk() if DND_AVAILABLE else tk.Tk()
     SandCheckApp(root)
     root.mainloop()
 
