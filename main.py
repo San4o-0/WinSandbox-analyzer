@@ -176,11 +176,11 @@ class SandCheckApp:
             font=(UI_FONT, 10, "bold"), pady=9,
         )
         self.choose_btn.pack(fill="x", pady=(12, 0))
-        self.status = tk.Label(parent, text=self.t(self.status_key), bg=C["bg"],
-                               fg=C["accent"] if self.busy else C["muted"],
-                               font=(UI_FONT, 9, "bold" if self.busy else "normal"),
-                               anchor="w", justify="left", wraplength=290)
-        self.status.pack(fill="x", pady=(8, 0))
+        bg, fg = self._status_colors()
+        self.status = tk.Label(parent, text=self.t(self.status_key), bg=bg, fg=fg,
+                               font=(UI_FONT, 9, "bold"), justify="center",
+                               wraplength=250, padx=14, pady=5)
+        self.status.pack(pady=(10, 0))
 
         self.file_card = tk.Frame(parent, bg=C["bg"])
         self.file_card.pack(fill="x", pady=(14, 0))
@@ -640,12 +640,16 @@ class SandCheckApp:
         self._render_findings()
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
 
+    def _status_colors(self):
+        if self.busy:
+            return self.C["accent"], "#ffffff"
+        return LEVEL_COLORS["clean"], "#06301a"
+
     def _set_status(self, key):
         C = self.C
         self.status_key = key
-        self.status.config(text=self.t(key) if i18n.has(key) else key,
-                           fg=C["accent"] if self.busy else C["muted"],
-                           font=(UI_FONT, 9, "bold" if self.busy else "normal"))
+        bg, fg = self._status_colors()
+        self.status.config(text=self.t(key) if i18n.has(key) else key, bg=bg, fg=fg)
         self.choose_btn.config(state="disabled" if self.busy else "normal",
                                bg=C["surface"] if self.busy else C["accent"],
                                fg=C["muted"] if self.busy else "#ffffff",
