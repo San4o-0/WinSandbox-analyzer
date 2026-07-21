@@ -61,10 +61,11 @@ LEVEL_COLORS = {
 SEVERITY_COLORS = {
     "danger": "#ef4444",
     "warn": "#f59e0b",
+    "trust": "#22c55e",
     "info": "#4f8cff",
 }
 
-SEVERITY_ICONS = {"danger": "⛔", "warn": "⚠", "info": "ⓘ"}
+SEVERITY_ICONS = {"danger": "⛔", "warn": "⚠", "trust": "✓", "info": "ⓘ"}
 
 STEP_KEYS = ("status_static", "sandbox_start", "sandbox_analyzing")
 STEP_LABELS = ("step_inspect", "step_sandbox", "step_watch")

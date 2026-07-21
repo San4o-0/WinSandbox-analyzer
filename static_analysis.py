@@ -4,6 +4,7 @@ import os
 import re
 
 import config
+import deep_scan
 
 
 def compute_hashes(path):
@@ -110,4 +111,5 @@ def analyze(path):
         "is_executable_type": "executable" in ftype.lower()
         or os.path.splitext(path)[1].lower() in config.EXECUTABLE_EXTENSIONS,
     }
+    result["deep"] = deep_scan.analyze(path, ftype)
     return result
