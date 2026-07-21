@@ -262,12 +262,20 @@ class SandCheckApp:
         badge.create_line(16, 35, 32, 35, fill=C["accent"], width=3, capstyle="round")
         badge.pack(pady=(34, 14))
         hint = tk.Label(zone, text=self.t("drop_hint"), bg=C["surface"], fg=C["text"],
-                        font=(UI_FONT, 11, "bold"))
+                        font=(UI_FONT, 11, "bold"), wraplength=250)
         hint.pack()
         sub = tk.Label(zone, text=self.t("drop_sub"), bg=C["surface"], fg=C["muted"],
                        font=(UI_FONT, 9))
-        sub.pack(pady=(4, 34))
-        widgets = (zone, badge, hint, sub)
+        sub.pack(pady=(4, 12))
+
+        types = tk.Label(zone, text=self.t("drop_types"), bg=C["surface"], fg=C["accent"],
+                         font=(UI_FONT, 8), wraplength=250)
+        types.pack()
+        limit = tk.Label(zone, text=self.t("drop_limit", size=config.MAX_FILE_SIZE_MB),
+                         bg=C["surface"], fg=C["muted"], font=(UI_FONT, 8))
+        limit.pack(pady=(2, 26))
+
+        widgets = (zone, badge, hint, sub, types, limit)
         for widget in widgets:
             widget.bind("<Enter>", self._zone_hover_on)
             widget.bind("<Leave>", self._zone_hover_off)

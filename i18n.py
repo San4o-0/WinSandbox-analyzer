@@ -2,8 +2,10 @@ STRINGS = {
     "uk": {
         "app_title": "SandCheck — перевірка файлів у пісочниці",
         "subtitle": "кинь файл — отримай вердикт",
-        "drop_hint": "Перетягніть файл сюди",
+        "drop_hint": "Перетягніть сюди будь-який файл",
         "drop_sub": "або натисніть «Обрати файл»",
+        "drop_types": "програми · документи · архіви · скрипти · фото",
+        "drop_limit": "будь-який тип, до {size} МБ",
         "choose_file": "Обрати файл",
         "ready": "Готовий",
         "busy": "Зачекайте: триває перевірка іншого файлу.",
@@ -115,8 +117,10 @@ STRINGS = {
     "en": {
         "app_title": "SandCheck — sandbox file analysis",
         "subtitle": "drop a file — get a verdict",
-        "drop_hint": "Drag & drop a file here",
+        "drop_hint": "Drag & drop any file here",
         "drop_sub": "or click “Choose file”",
+        "drop_types": "programs · documents · archives · scripts · photos",
+        "drop_limit": "any type, up to {size} MB",
         "choose_file": "Choose file",
         "ready": "Ready",
         "busy": "Please wait: another file is being checked.",
