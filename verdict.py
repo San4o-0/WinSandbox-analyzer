@@ -49,9 +49,42 @@ def _deep_cards(deep):
     return score, cards
 
 
+def _reputation_cards(rep):
+    state = rep.get("state")
+    if state == "found":
+        malicious = rep.get("malicious", 0) + rep.get("suspicious", 0)
+        total = rep.get("total", 0)
+        if malicious >= 3:
+            return 60, [_card("ind_vt_malicious", "danger", 60, count=malicious,
+                              total=total, label=rep.get("label", "") or "—",
+                              items=", ".join(rep.get("names", [])) or "—")]
+        if malicious > 0:
+            return 18, [_card("ind_vt_few", "warn", 18, count=malicious, total=total,
+                              items=", ".join(rep.get("names", [])) or "—")]
+        if rep.get("times_submitted", 0) >= 5:
+            return -20, [_card("ind_vt_clean", "trust", -20, total=total,
+                               count=rep.get("times_submitted", 0))]
+        return -8, [_card("ind_vt_clean_new", "trust", -8, total=total)]
+    if state == "unknown":
+        return 3, [_card("ind_vt_unknown", "info", 3)]
+    if state == "bad_key":
+        return 0, [_card("ind_vt_bad_key", "info", 0)]
+    if state == "rate_limited":
+        return 0, [_card("ind_vt_rate", "info", 0)]
+    if state in ("offline", "error"):
+        return 0, [_card("ind_vt_offline", "info", 0)]
+    return 0, []
+
+
 def evaluate(static_result, dynamic_report):
     score = 0
     cards = []
+
+    reputation = static_result.get("reputation") or {}
+    if reputation:
+        rep_score, rep_cards = _reputation_cards(reputation)
+        score += rep_score
+        cards.extend(rep_cards)
 
     deep = static_result.get("deep") or {}
     if deep:

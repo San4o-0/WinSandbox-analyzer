@@ -11,6 +11,7 @@ from tkinter import filedialog, ttk
 import app_settings
 import config
 import i18n
+import reputation
 import sandbox_manager
 import static_analysis
 import verdict
@@ -67,8 +68,12 @@ SEVERITY_COLORS = {
 
 SEVERITY_ICONS = {"danger": "⛔", "warn": "⚠", "trust": "✓", "info": "ⓘ"}
 
-STEP_KEYS = ("status_static", "sandbox_start", "sandbox_analyzing")
-STEP_LABELS = ("step_inspect", "step_sandbox", "step_watch")
+ALL_STEPS = (
+    ("status_static", "step_inspect", False),
+    ("status_reputation", "step_reputation", True),
+    ("sandbox_start", "step_sandbox", False),
+    ("sandbox_analyzing", "step_watch", False),
+)
 
 UI_FONT = "Segoe UI"
 MONO_FONT = "Consolas"
@@ -295,7 +300,7 @@ class SandCheckApp:
                  font=(UI_FONT, 10, "bold")).pack()
         steps = tk.Frame(zone, bg=C["surface"])
         steps.pack(pady=(12, 26), padx=20, anchor="w")
-        for index, key in enumerate(STEP_LABELS):
+        for index, key in enumerate(label for _, label, _ in self._steps()):
             done = index < self.step_index
             active = index == self.step_index
             row = tk.Frame(steps, bg=C["surface"])
@@ -561,6 +566,8 @@ class SandCheckApp:
              [("uk", i18n.LANGUAGES["uk"]), ("en", i18n.LANGUAGES["en"])]),
             ("theme_label", "theme",
              [("dark", self.t("theme_dark")), ("light", self.t("theme_light"))]),
+            ("online_label", "online_check",
+             [(True, self.t("online_on")), (False, self.t("online_off"))]),
         ]
         for label_key, setting_key, options in rows:
             row = tk.Frame(body, bg=C["bg"])
@@ -580,6 +587,39 @@ class SandCheckApp:
                           cursor="hand2",
                           font=(UI_FONT, 9, "bold" if active else "normal"),
                           padx=16, pady=6).pack(side="left", padx=(0, 8))
+
+        key_row = tk.Frame(body, bg=C["bg"])
+        key_row.pack(fill="x", pady=(12, 0))
+        tk.Label(key_row, text=self.t("vt_key_label"), bg=C["bg"], fg=C["text"],
+                 font=(UI_FONT, 10, "bold"), anchor="w").pack(fill="x")
+        tk.Label(key_row, text=self.t("vt_key_hint"), bg=C["bg"], fg=C["muted"],
+                 font=(UI_FONT, 8), anchor="w", justify="left",
+                 wraplength=360).pack(fill="x", pady=(2, 6))
+        entry_row = tk.Frame(key_row, bg=C["bg"])
+        entry_row.pack(fill="x")
+        self.key_entry = tk.Entry(entry_row, bg=C["surface"], fg=C["text"],
+                                  insertbackground=C["text"], relief="flat",
+                                  highlightthickness=1, highlightbackground=C["border"],
+                                  highlightcolor=C["accent"], font=(MONO_FONT, 9), show="•")
+        self.key_entry.insert(0, self.settings.get("vt_key", ""))
+        self.key_entry.pack(side="left", fill="x", expand=True, ipady=5)
+        tk.Button(entry_row, text=self.t("save_key"), command=self._save_key,
+                  bg=C["accent"], fg="#ffffff", activebackground=C["accent_dark"],
+                  activeforeground="#ffffff", relief="flat", bd=0, highlightthickness=0,
+                  cursor="hand2", font=(UI_FONT, 9, "bold"),
+                  padx=14, pady=5).pack(side="left", padx=(8, 0))
+        self.key_status = tk.Label(key_row, text="", bg=C["bg"], fg=C["muted"],
+                                   font=(UI_FONT, 8), anchor="w")
+        self.key_status.pack(fill="x", pady=(6, 0))
+
+    def _save_key(self):
+        value = self.key_entry.get().strip()
+        self.settings["vt_key"] = value[:128]
+        app_settings.save(self.settings)
+        self.key_status.config(
+            text=self.t("key_saved" if value else "key_cleared"),
+            fg=LEVEL_COLORS["clean"] if value else self.C["muted"],
+        )
 
     def _set_setting(self, key, value):
         if self.settings[key] == value:
@@ -640,6 +680,10 @@ class SandCheckApp:
         self._render_findings()
         threading.Thread(target=self._worker, args=(path,), daemon=True).start()
 
+    def _steps(self):
+        online = bool(self.settings.get("online_check"))
+        return [step for step in ALL_STEPS if online or not step[2]]
+
     def _status_colors(self):
         if self.busy:
             return self.C["accent"], "#ffffff"
@@ -687,10 +731,12 @@ class SandCheckApp:
 
     def _worker(self, path):
         session = None
+        static_result = None
         try:
             self.msg_queue.put(("status", "status_static"))
             static_result = static_analysis.analyze(path)
             self.msg_queue.put(("static", static_result))
+            self._add_reputation(static_result)
             session = sandbox_manager.create_session(path)
             report = sandbox_manager.run_sandbox(
                 session, progress=lambda m: self.msg_queue.put(("status", m))
@@ -699,16 +745,23 @@ class SandCheckApp:
             self._save_report(session, static_result, report, result)
             self.msg_queue.put(("verdict", result))
         except sandbox_manager.SandboxError as e:
-            static_result = static_analysis.analyze(path)
-            result = verdict.evaluate(static_result, None)
             self.msg_queue.put(("error", str(e)))
-            self.msg_queue.put(("verdict", result))
+            if static_result:
+                self.msg_queue.put(("verdict", verdict.evaluate(static_result, None)))
         except Exception as e:
             self.msg_queue.put(("error", str(e)))
         finally:
             if session:
                 sandbox_manager.cleanup(session)
             self.msg_queue.put(("done", None))
+
+    def _add_reputation(self, static_result):
+        if not self.settings.get("online_check"):
+            return
+        self.msg_queue.put(("status", "status_reputation"))
+        static_result["reputation"] = reputation.lookup(
+            static_result["sha256"], self.settings.get("vt_key", "")
+        )
 
     def _save_report(self, session, static_result, dynamic_report, result):
         out = {"verdict": result, "static": static_result, "dynamic": dynamic_report}
@@ -731,8 +784,9 @@ class SandCheckApp:
     def _handle(self, kind, payload):
         if kind == "status":
             self._set_status(payload if i18n.has(payload) else "ready")
-            if payload in STEP_KEYS:
-                self.step_index = STEP_KEYS.index(payload)
+            keys = [key for key, _, _ in self._steps()]
+            if payload in keys:
+                self.step_index = keys.index(payload)
                 self._render_zone()
         elif kind == "static":
             self.current_static = payload

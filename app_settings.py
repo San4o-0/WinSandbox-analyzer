@@ -5,8 +5,12 @@ import config
 
 SETTINGS_FILE = os.path.join(config.BASE_DIR, "settings.json")
 
-DEFAULTS = {"language": "uk", "theme": "dark"}
-VALID = {"language": {"uk", "en"}, "theme": {"dark", "light"}}
+DEFAULTS = {"language": "uk", "theme": "dark", "online_check": False, "vt_key": ""}
+VALID = {
+    "language": {"uk", "en"},
+    "theme": {"dark", "light"},
+    "online_check": {True, False},
+}
 
 
 def load():
@@ -19,6 +23,9 @@ def load():
     for key, allowed in VALID.items():
         if data.get(key) in allowed:
             result[key] = data[key]
+    key = data.get("vt_key")
+    if isinstance(key, str) and len(key) <= 128:
+        result["vt_key"] = key.strip()
     return result
 
 

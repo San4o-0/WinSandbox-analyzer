@@ -5,6 +5,9 @@ BASE_DIR = os.path.join(os.path.expanduser("~"), "SandCheck")
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 LOG_FILE = os.path.join(BASE_DIR, "sandcheck.log")
 
+VT_API_URL = "https://www.virustotal.com/api/v3/files/"
+VT_TIMEOUT = 20
+
 MAX_FILE_SIZE_MB = 500
 SANDBOX_MEMORY_MB = 2048
 SANDBOX_NETWORKING = False
