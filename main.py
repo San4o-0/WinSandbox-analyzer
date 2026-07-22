@@ -68,6 +68,8 @@ SEVERITY_COLORS = {
 
 SEVERITY_ICONS = {"danger": "⛔", "warn": "⚠", "trust": "✓", "info": "ⓘ"}
 
+ORIGIN_KEYS = ("ind_vt_", "ind_signed", "ind_sig_broken", "ind_unsigned")
+
 ALL_STEPS = (
     ("status_static", "step_inspect", False),
     ("status_reputation", "step_reputation", True),
@@ -202,7 +204,7 @@ class SandCheckApp:
         self.verdict_canvas.pack(fill="x")
         self.verdict_canvas.bind("<Configure>", self._draw_verdict)
 
-        self.findings_title = tk.Label(parent, text=self.t("section_behavior"), bg=C["bg"],
+        self.findings_title = tk.Label(parent, text=self.t("section_results"), bg=C["bg"],
                                        fg=C["text"], font=(UI_FONT, 12, "bold"), anchor="w")
         self.findings_title.pack(fill="x", pady=(16, 8))
 
@@ -419,8 +421,17 @@ class SandCheckApp:
         if not cards:
             self._simple_card(self.t("nothing_found"), "info")
             return
-        for card in cards:
-            self._finding_card(card)
+
+        origin = [c for c in cards if c["key"].startswith(ORIGIN_KEYS)]
+        behavior = [c for c in cards if not c["key"].startswith(ORIGIN_KEYS)]
+        if origin:
+            self._section_header(self.t("section_origin"))
+            for card in origin:
+                self._finding_card(card)
+        if behavior:
+            self._section_header(self.t("section_behavior"), first=not origin)
+            for card in behavior:
+                self._finding_card(card)
         if v["analyzed_dynamically"]:
             note = tk.Label(self.findings,
                             text=self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS),
@@ -428,6 +439,13 @@ class SandCheckApp:
                             justify="left")
             note.pack(fill="x", pady=(6, 12))
             self.wrap_labels.append((note, 20))
+
+    def _section_header(self, text, first=True):
+        C = self.C
+        tk.Label(self.findings, text=text.upper(), bg=C["bg"], fg=C["muted"],
+                 font=(UI_FONT, 8, "bold"), anchor="w").pack(
+            fill="x", pady=(0 if first else 10, 8)
+        )
 
     def _card_shell(self, accent):
         C = self.C
