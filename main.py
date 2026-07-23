@@ -27,19 +27,22 @@ except ImportError:
 
 THEMES = {
     "dark": {
-        "bg": "#0b0d11",
-        "surface": "#14171e",
-        "surface_hover": "#1b1f28",
-        "chip": "#1e2530",
-        "border": "#262b36",
-        "accent": "#22d3ee",
-        "accent_dark": "#0fa9c4",
-        "on_accent": "#04222a",
-        "text": "#e9edf4",
-        "muted": "#7f8a9c",
-        "report_fg": "#c4cedd",
-        "scroll_active": "#39414f",
-        "tint": 0.14,
+        "bg": "#0a0e14",
+        "surface": "#0f151f",
+        "surface_hover": "#151d2a",
+        "chip": "#152133",
+        "border": "#1e3050",
+        "accent": "#367bf0",
+        "accent_dark": "#2860c4",
+        "on_accent": "#ffffff",
+        "text": "#cdd9ea",
+        "muted": "#5f728d",
+        "report_fg": "#8aa0c0",
+        "scroll_active": "#2a3f5c",
+        "prompt": "#38c76a",
+        "prompt_alt": "#e0457b",
+        "alpha": 0.93,
+        "tint": 0.16,
     },
     "light": {
         "bg": "#eef1f6",
@@ -47,13 +50,16 @@ THEMES = {
         "surface_hover": "#f5f8fd",
         "chip": "#eaeef5",
         "border": "#d7dde7",
-        "accent": "#0891b2",
-        "accent_dark": "#066e88",
+        "accent": "#2860c4",
+        "accent_dark": "#1c4a9e",
         "on_accent": "#ffffff",
         "text": "#151a22",
         "muted": "#636d7e",
         "report_fg": "#39424f",
         "scroll_active": "#c3cad6",
+        "prompt": "#1a8f3f",
+        "prompt_alt": "#c2185b",
+        "alpha": 1.0,
         "tint": 0.08,
     },
 }
@@ -115,7 +121,14 @@ class SandCheckApp:
         self.root.geometry("1040x740")
         self.root.minsize(900, 620)
         self._build_ui()
+        self.root.after(80, self._apply_alpha)
         self.root.after(100, self._poll_queue)
+
+    def _apply_alpha(self):
+        try:
+            self.root.attributes("-alpha", self.C["alpha"])
+        except tk.TclError:
+            pass
 
     @property
     def C(self):
@@ -128,6 +141,7 @@ class SandCheckApp:
         C = self.C
         self.root.title(self.t("app_title"))
         self.root.configure(bg=C["bg"])
+        self._apply_alpha()
         self.wrap_labels = []
 
         self._build_header()
@@ -153,24 +167,46 @@ class SandCheckApp:
     def _build_header(self):
         C = self.C
         header = tk.Frame(self.root, bg=C["bg"])
-        header.pack(fill="x", padx=24, pady=(18, 10))
+        header.pack(fill="x", padx=24, pady=(16, 8))
         self.logo = tk.Canvas(header, width=34, height=36, bg=C["bg"],
                               highlightthickness=0)
-        self.logo.pack(side="left", padx=(0, 10))
+        self.logo.pack(side="left", padx=(0, 12))
         self.logo_scan = 0.0
         self._draw_logo()
         self._animate_logo()
-        tk.Label(header, text="Sand", bg=C["bg"], fg=C["text"],
-                 font=(UI_FONT, 17, "bold")).pack(side="left")
-        tk.Label(header, text="Check", bg=C["bg"], fg=C["accent"],
-                 font=(UI_FONT, 17, "bold")).pack(side="left")
-        tk.Label(header, text=self.t("subtitle"), bg=C["bg"], fg=C["muted"],
-                 font=(UI_FONT, 9)).pack(side="left", padx=(12, 0), pady=(6, 0))
+
+        block = tk.Frame(header, bg=C["bg"])
+        block.pack(side="left")
+        line1 = tk.Frame(block, bg=C["bg"])
+        line1.pack(anchor="w")
+        tk.Label(line1, text="┌──(", bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        tk.Label(line1, text="sand", bg=C["bg"], fg=C["prompt"],
+                 font=(MONO_FONT, 11, "bold")).pack(side="left")
+        tk.Label(line1, text="㉿", bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        tk.Label(line1, text="check", bg=C["bg"], fg=C["accent"],
+                 font=(MONO_FONT, 11, "bold")).pack(side="left")
+        tk.Label(line1, text=")-[", bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        tk.Label(line1, text="~/scan", bg=C["bg"], fg=C["text"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        tk.Label(line1, text="]", bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        line2 = tk.Frame(block, bg=C["bg"])
+        line2.pack(anchor="w")
+        tk.Label(line2, text="└─", bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 11)).pack(side="left")
+        tk.Label(line2, text="$", bg=C["bg"], fg=C["prompt_alt"],
+                 font=(MONO_FONT, 11, "bold")).pack(side="left")
+        tk.Label(line2, text=" " + self.t("subtitle"), bg=C["bg"], fg=C["muted"],
+                 font=(MONO_FONT, 10)).pack(side="left")
+
         gear = tk.Label(header, text="⚙", bg=C["bg"], fg=C["muted"],
                         font=(UI_FONT, 14), cursor="hand2")
-        gear.pack(side="right")
+        gear.pack(side="right", pady=(4, 0))
         gear.bind("<Button-1>", lambda e: self._open_settings())
-        gear.bind("<Enter>", lambda e: gear.config(fg=C["text"]))
+        gear.bind("<Enter>", lambda e: gear.config(fg=C["accent"]))
         gear.bind("<Leave>", lambda e: gear.config(fg=C["muted"]))
 
     def _build_left(self, parent):
@@ -218,8 +254,9 @@ class SandCheckApp:
         self.verdict_canvas.pack(fill="x")
         self.verdict_canvas.bind("<Configure>", self._draw_verdict)
 
-        self.findings_title = tk.Label(parent, text=self.t("section_results"), bg=C["bg"],
-                                       fg=C["text"], font=(UI_FONT, 12, "bold"), anchor="w")
+        self.findings_title = tk.Label(parent, text="┌─[ " + self.t("section_results") + " ]",
+                                       bg=C["bg"], fg=C["text"], font=(MONO_FONT, 12, "bold"),
+                                       anchor="w")
         self.findings_title.pack(fill="x", pady=(16, 8))
 
         holder = tk.Frame(parent, bg=C["bg"])
@@ -551,8 +588,8 @@ class SandCheckApp:
 
     def _section_header(self, text, first=True):
         C = self.C
-        label = tk.Label(self.findings, text=text.upper(), bg=C["bg"], fg=C["muted"],
-                         font=(UI_FONT, 8, "bold"), anchor="w")
+        label = tk.Label(self.findings, text="// " + text.lower(), bg=C["bg"],
+                         fg=C["prompt"], font=(MONO_FONT, 9, "bold"), anchor="w")
         self.reveal_queue.append((label, {"fill": "x", "pady": (0 if first else 12, 8)}))
 
     def _tint(self, accent, strength=1.0):
@@ -707,6 +744,10 @@ class SandCheckApp:
         self.settings_win = win
         win.resizable(False, False)
         win.transient(self.root)
+        try:
+            win.attributes("-alpha", self.C["alpha"])
+        except tk.TclError:
+            pass
         win.geometry("+%d+%d" % (self.root.winfo_rootx() + 300,
                                  self.root.winfo_rooty() + 140))
         self._render_settings()
