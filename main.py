@@ -220,10 +220,7 @@ class SandCheckApp:
         host = tk.Frame(self.left_canvas, bg=C["bg"])
         self.left_window = self.left_canvas.create_window((0, 0), window=host, anchor="nw")
         host.bind("<Configure>", self._sync_left_scroll)
-        self.left_canvas.bind(
-            "<Configure>",
-            lambda e: self.left_canvas.itemconfig(self.left_window, width=e.width),
-        )
+        self.left_canvas.bind("<Configure>", self._on_left_canvas_resize)
 
         self.drop_zone = tk.Frame(host, bg=C["surface"], bd=0, highlightthickness=1,
                                   highlightbackground=C["border"], highlightcolor=C["border"])
@@ -259,15 +256,26 @@ class SandCheckApp:
         self.advice_card = tk.Frame(host, bg=C["bg"])
         self.advice_card.pack(fill="x", pady=(12, 0))
 
+    def _on_left_canvas_resize(self, event):
+        self.left_canvas.itemconfig(self.left_window, width=event.width)
+        self._sync_left_scroll()
+
     def _sync_left_scroll(self, event=None):
         canvas = self.left_canvas
-        canvas.config(scrollregion=canvas.bbox("all"))
-        need = canvas.bbox("all")[3] > canvas.winfo_height()
+        box = canvas.bbox("all")
+        if box is None:
+            return
+        canvas.config(scrollregion=box)
+        height = canvas.winfo_height()
+        if height <= 1:
+            return
+        need = box[3] > height + 2
         shown = bool(self.left_scrollbar.winfo_manager())
         if need and not shown:
             self.left_scrollbar.pack(side="right", fill="y", before=canvas)
         elif not need and shown:
             self.left_scrollbar.pack_forget()
+            canvas.yview_moveto(0)
 
     def _build_right(self, parent):
         C = self.C
