@@ -236,10 +236,9 @@ class SandCheckApp:
             lambda e: self.scroll_canvas.config(scrollregion=self.scroll_canvas.bbox("all")),
         )
         self.scroll_canvas.bind("<Configure>", self._on_scroll_resize)
-        for widget in (self.scroll_canvas, self.findings):
-            widget.bind("<MouseWheel>", self._on_wheel)
-            widget.bind("<Button-4>", self._on_wheel)
-            widget.bind("<Button-5>", self._on_wheel)
+        self.root.bind_all("<MouseWheel>", self._on_wheel)
+        self.root.bind_all("<Button-4>", self._on_wheel)
+        self.root.bind_all("<Button-5>", self._on_wheel)
 
     def _on_scroll_resize(self, event):
         self.scroll_canvas.itemconfig(self.findings_window, width=event.width)
@@ -247,6 +246,11 @@ class SandCheckApp:
             label.config(wraplength=max(event.width - pad, 120))
 
     def _on_wheel(self, event):
+        if not self.scroll_canvas.winfo_exists():
+            return
+        first, last = self.scroll_canvas.yview()
+        if first <= 0.0 and last >= 1.0:
+            return
         delta = 1 if getattr(event, "num", 0) == 5 else -1 if getattr(event, "num", 0) == 4 else 0
         if delta == 0:
             delta = -1 if event.delta > 0 else 1
