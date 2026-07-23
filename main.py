@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import queue
 import shutil
@@ -101,6 +102,10 @@ class SandCheckApp:
         self.spinner_job = None
         self.score_shown = 0
         self.wrap_labels = []
+        self.reveal_queue = []
+        self.reveal_job = None
+        self.idle_phase = 0.0
+        self.idle_job = None
         self.root.geometry("1040x740")
         self.root.minsize(900, 620)
         self._build_ui()
@@ -183,6 +188,8 @@ class SandCheckApp:
             font=(UI_FONT, 10, "bold"), pady=9,
         )
         self.choose_btn.pack(fill="x", pady=(12, 0))
+        self.choose_btn.bind("<Enter>", self._btn_hover_on)
+        self.choose_btn.bind("<Leave>", self._btn_hover_off)
         bg, fg = self._status_colors()
         self.status = tk.Label(parent, text=self.t(self.status_key), bg=bg, fg=fg,
                                font=(UI_FONT, 9, "bold"), justify="center",
@@ -245,9 +252,11 @@ class SandCheckApp:
     def _render_zone(self):
         C = self.C
         zone = self.drop_zone
-        if self.spinner_job is not None:
-            self.root.after_cancel(self.spinner_job)
-            self.spinner_job = None
+        for attr in ("spinner_job", "idle_job"):
+            job = getattr(self, attr)
+            if job is not None:
+                self.root.after_cancel(job)
+                setattr(self, attr, None)
         for widget in zone.winfo_children():
             widget.destroy()
         zone.config(bg=C["surface"], highlightbackground=C["border"])
@@ -261,13 +270,12 @@ class SandCheckApp:
     def _build_zone_idle(self):
         C = self.C
         zone = self.drop_zone
-        badge = tk.Canvas(zone, width=48, height=48, bg=C["surface"], highlightthickness=0)
-        badge.create_rectangle(0, 0, 48, 48, fill=C["chip"], outline="")
-        badge.create_line(24, 16, 24, 30, fill=C["accent"], width=3, capstyle="round")
-        badge.create_line(18, 24, 24, 30, fill=C["accent"], width=3, capstyle="round")
-        badge.create_line(30, 24, 24, 30, fill=C["accent"], width=3, capstyle="round")
-        badge.create_line(16, 35, 32, 35, fill=C["accent"], width=3, capstyle="round")
-        badge.pack(pady=(34, 14))
+        self.idle_badge = tk.Canvas(zone, width=56, height=64, bg=C["surface"],
+                                    highlightthickness=0)
+        self.idle_badge.pack(pady=(30, 10))
+        badge = self.idle_badge
+        self._draw_idle_badge(0.0)
+        self._animate_idle()
         hint = tk.Label(zone, text=self.t("drop_hint"), bg=C["surface"], fg=C["text"],
                         font=(UI_FONT, 11, "bold"), wraplength=250)
         hint.pack()
@@ -338,6 +346,30 @@ class SandCheckApp:
             zone.drop_target_register(DND_FILES)
             zone.dnd_bind("<<Drop>>", self._on_drop)
 
+    def _draw_idle_badge(self, offset):
+        C = self.C
+        canvas = self.idle_badge
+        canvas.delete("all")
+        top = 8 + offset
+        canvas.create_rectangle(4, top, 52, top + 48, fill=C["chip"], outline="")
+        cx = 28
+        canvas.create_line(cx, top + 14, cx, top + 30, fill=C["accent"], width=3,
+                           capstyle="round")
+        canvas.create_line(cx - 7, top + 23, cx, top + 30, fill=C["accent"], width=3,
+                           capstyle="round")
+        canvas.create_line(cx + 7, top + 23, cx, top + 30, fill=C["accent"], width=3,
+                           capstyle="round")
+        canvas.create_line(cx - 8, top + 38, cx + 8, top + 38, fill=C["accent"], width=3,
+                           capstyle="round")
+
+    def _animate_idle(self):
+        if self.stage != "idle" or not self.idle_badge.winfo_exists():
+            self.idle_job = None
+            return
+        self.idle_phase = (self.idle_phase + 0.09) % (2 * math.pi)
+        self._draw_idle_badge(round(-3 * math.sin(self.idle_phase), 1))
+        self.idle_job = self.root.after(45, self._animate_idle)
+
     def _animate_spinner(self):
         if self.stage != "checking" or not self.spinner.winfo_exists():
             self.spinner_job = None
@@ -349,6 +381,14 @@ class SandCheckApp:
         self.spinner.create_arc(4, 4, 30, 30, start=self.spinner_angle, extent=100,
                                 style="arc", outline=C["accent"], width=3)
         self.spinner_job = self.root.after(40, self._animate_spinner)
+
+    def _btn_hover_on(self, event=None):
+        if not self.busy:
+            self.choose_btn.config(bg=_lerp(self.C["accent"], "#ffffff", 0.12))
+
+    def _btn_hover_off(self, event=None):
+        if not self.busy:
+            self.choose_btn.config(bg=self.C["accent"])
 
     def _zone_hover_on(self, event=None):
         C = self.C
@@ -394,15 +434,17 @@ class SandCheckApp:
     def _animate_score(self):
         target = self.current_verdict["score"] if self.current_verdict else 0
         if self.score_shown < target:
-            self.score_shown = min(target, self.score_shown + max(1, target // 18))
+            step = max(1, round((target - self.score_shown) * 0.18))
+            self.score_shown = min(target, self.score_shown + step)
             self._draw_verdict()
-            self.root.after(20, self._animate_score)
+            self.root.after(18, self._animate_score)
         else:
             self.score_shown = target
             self._draw_verdict()
 
     def _render_findings(self):
         C = self.C
+        self._cancel_reveal()
         for widget in self.findings.winfo_children():
             widget.destroy()
         self.wrap_labels = [
@@ -420,55 +462,92 @@ class SandCheckApp:
         cards = list(v["cards"])
         if not cards:
             self._simple_card(self.t("nothing_found"), "info")
-            return
+        else:
+            origin = [c for c in cards if c["key"].startswith(ORIGIN_KEYS)]
+            behavior = [c for c in cards if not c["key"].startswith(ORIGIN_KEYS)]
+            if origin:
+                self._section_header(self.t("section_origin"))
+                for card in origin:
+                    self._finding_card(card)
+            if behavior:
+                self._section_header(self.t("section_behavior"), first=not origin)
+                for card in behavior:
+                    self._finding_card(card)
+            if v["analyzed_dynamically"]:
+                note = tk.Label(self.findings, bg=C["bg"], fg=C["muted"],
+                                text=self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS),
+                                font=(UI_FONT, 8), anchor="w", justify="left")
+                self.wrap_labels.append((note, 20))
+                self.reveal_queue.append((note, {"fill": "x", "pady": (6, 12)}))
+        self._reveal_next()
 
-        origin = [c for c in cards if c["key"].startswith(ORIGIN_KEYS)]
-        behavior = [c for c in cards if not c["key"].startswith(ORIGIN_KEYS)]
-        if origin:
-            self._section_header(self.t("section_origin"))
-            for card in origin:
-                self._finding_card(card)
-        if behavior:
-            self._section_header(self.t("section_behavior"), first=not origin)
-            for card in behavior:
-                self._finding_card(card)
-        if v["analyzed_dynamically"]:
-            note = tk.Label(self.findings,
-                            text=self.t("checked_dynamic", seconds=config.OBSERVE_SECONDS),
-                            bg=C["bg"], fg=C["muted"], font=(UI_FONT, 8), anchor="w",
-                            justify="left")
-            note.pack(fill="x", pady=(6, 12))
-            self.wrap_labels.append((note, 20))
+    def _cancel_reveal(self):
+        if self.reveal_job is not None:
+            self.root.after_cancel(self.reveal_job)
+            self.reveal_job = None
+        self.reveal_queue = []
+
+    def _reveal_next(self):
+        if not self.reveal_queue:
+            self.reveal_job = None
+            return
+        widget, opts = self.reveal_queue.pop(0)
+        if widget.winfo_exists():
+            widget.pack(**opts)
+            self.scroll_canvas.update_idletasks()
+            self.scroll_canvas.config(scrollregion=self.scroll_canvas.bbox("all"))
+        delay = 55 if self.reveal_queue else 0
+        self.reveal_job = self.root.after(delay, self._reveal_next)
 
     def _section_header(self, text, first=True):
         C = self.C
-        tk.Label(self.findings, text=text.upper(), bg=C["bg"], fg=C["muted"],
-                 font=(UI_FONT, 8, "bold"), anchor="w").pack(
-            fill="x", pady=(0 if first else 10, 8)
-        )
+        label = tk.Label(self.findings, text=text.upper(), bg=C["bg"], fg=C["muted"],
+                         font=(UI_FONT, 8, "bold"), anchor="w")
+        self.reveal_queue.append((label, {"fill": "x", "pady": (0 if first else 12, 8)}))
 
     def _card_shell(self, accent):
         C = self.C
         outer = tk.Frame(self.findings, bg=C["border"])
-        outer.pack(fill="x", pady=(0, 10))
         inner = tk.Frame(outer, bg=C["surface"])
         inner.pack(fill="both", expand=True, padx=(3, 1), pady=1)
-        tk.Frame(outer, bg=accent, width=3).place(x=0, y=0, relheight=1)
-        return inner
+        bar = tk.Frame(outer, bg=accent, width=3)
+        bar.place(x=0, y=0, relheight=1)
+        self.reveal_queue.append((outer, {"fill": "x", "pady": (0, 10)}))
+        return outer, inner, accent
+
+    def _bind_card_hover(self, outer, inner, accent):
+        C = self.C
+        widgets = [inner]
+        stack = [inner]
+        while stack:
+            for child in stack.pop().winfo_children():
+                widgets.append(child)
+                stack.append(child)
+        tinted = [w for w in widgets
+                  if isinstance(w, (tk.Frame, tk.Label)) and str(w["bg"]) == C["surface"]]
+
+        def paint(color):
+            for widget in tinted:
+                if widget.winfo_exists():
+                    widget.config(bg=color)
+
+        for widget in widgets:
+            widget.bind("<Enter>", lambda e: paint(C["surface_hover"]), add="+")
+            widget.bind("<Leave>", lambda e: paint(C["surface"]), add="+")
 
     def _simple_card(self, text, severity):
         C = self.C
-        inner = self._card_shell(SEVERITY_COLORS[severity])
+        outer, inner, accent = self._card_shell(SEVERITY_COLORS[severity])
         label = tk.Label(inner, text=text, bg=C["surface"], fg=C["text"],
                          font=(UI_FONT, 10), anchor="w", justify="left")
         label.pack(fill="x", padx=16, pady=14)
         self.wrap_labels.append((label, 60))
+        self._bind_card_hover(outer, inner, accent)
 
     def _finding_card(self, card):
         C = self.C
         severity = card["severity"]
-        accent = SEVERITY_COLORS[severity]
-        inner = self._card_shell(accent)
+        outer, inner, accent = self._card_shell(SEVERITY_COLORS[severity])
 
         head = tk.Frame(inner, bg=C["surface"])
         head.pack(fill="x", padx=16, pady=(14, 2))
@@ -490,6 +569,7 @@ class SandCheckApp:
             for marker in items.split(", ")[:5]:
                 tk.Label(chips, text=marker, bg=C["chip"], fg=C["report_fg"],
                          font=(MONO_FONT, 8), padx=7, pady=3).pack(side="left", padx=(0, 6))
+        self._bind_card_hover(outer, inner, accent)
 
     def _render_file_card(self):
         C = self.C
@@ -544,11 +624,13 @@ class SandCheckApp:
                                                                      pady=(0, 12))
 
     def _rebuild(self):
-        for job in (self.progress_job, self.spinner_job):
+        for job in (self.progress_job, self.spinner_job, self.idle_job):
             if job is not None:
                 self.root.after_cancel(job)
         self.progress_job = None
         self.spinner_job = None
+        self.idle_job = None
+        self._cancel_reveal()
         for widget in self.root.winfo_children():
             if not isinstance(widget, tk.Toplevel):
                 widget.destroy()
@@ -823,6 +905,13 @@ class SandCheckApp:
             self._stop_progress()
             self._render_zone()
             self._set_status("status_done")
+
+
+def _lerp(color_a, color_b, t):
+    a = tuple(int(color_a[i:i + 2], 16) for i in (1, 3, 5))
+    b = tuple(int(color_b[i:i + 2], 16) for i in (1, 3, 5))
+    mixed = tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    return "#%02x%02x%02x" % tuple(max(0, min(255, c)) for c in mixed)
 
 
 def _ellipsis(text, limit):
