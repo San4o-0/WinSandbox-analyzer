@@ -106,6 +106,8 @@ class SandCheckApp:
         self.reveal_job = None
         self.idle_phase = 0.0
         self.idle_job = None
+        self.logo_scan = 0.0
+        self.logo_job = None
         self.root.geometry("1040x740")
         self.root.minsize(900, 620)
         self._build_ui()
@@ -148,11 +150,12 @@ class SandCheckApp:
         C = self.C
         header = tk.Frame(self.root, bg=C["bg"])
         header.pack(fill="x", padx=24, pady=(18, 10))
-        logo = tk.Canvas(header, width=30, height=30, bg=C["bg"], highlightthickness=0)
-        logo.create_oval(1, 1, 29, 29, fill=C["accent"], outline="")
-        logo.create_line(9, 16, 14, 21, fill="#ffffff", width=3, capstyle="round")
-        logo.create_line(14, 21, 22, 10, fill="#ffffff", width=3, capstyle="round")
-        logo.pack(side="left", padx=(0, 10))
+        self.logo = tk.Canvas(header, width=34, height=36, bg=C["bg"],
+                              highlightthickness=0)
+        self.logo.pack(side="left", padx=(0, 10))
+        self.logo_scan = 0.0
+        self._draw_logo()
+        self._animate_logo()
         tk.Label(header, text="Sand", bg=C["bg"], fg=C["text"],
                  font=(UI_FONT, 17, "bold")).pack(side="left")
         tk.Label(header, text="Check", bg=C["bg"], fg=C["accent"],
@@ -345,6 +348,30 @@ class SandCheckApp:
         if DND_AVAILABLE:
             zone.drop_target_register(DND_FILES)
             zone.dnd_bind("<<Drop>>", self._on_drop)
+
+    def _draw_logo(self):
+        C = self.C
+        canvas = self.logo
+        canvas.delete("all")
+        accent = C["accent"]
+        shield = [17, 3, 30, 8, 30, 19, 17, 33, 4, 19, 4, 8]
+        canvas.create_polygon(shield, fill=_lerp(accent, C["bg"], 0.15),
+                              outline=accent, width=1.5, joinstyle="round")
+        y = 7 + self.logo_scan * 20
+        glow = _lerp(accent, "#ffffff", 0.55)
+        canvas.create_line(7, y, 27, y, fill=glow, width=2)
+        canvas.create_line(10, 18, 15, 23, fill="#ffffff", width=2.4, capstyle="round")
+        canvas.create_line(15, 23, 24, 12, fill="#ffffff", width=2.4, capstyle="round")
+
+    def _animate_logo(self):
+        if not self.logo.winfo_exists():
+            self.logo_job = None
+            return
+        self.logo_scan += 0.035
+        if self.logo_scan > 1.0:
+            self.logo_scan = 0.0
+        self._draw_logo()
+        self.logo_job = self.root.after(40, self._animate_logo)
 
     def _draw_idle_badge(self, offset):
         C = self.C
@@ -624,12 +651,13 @@ class SandCheckApp:
                                                                      pady=(0, 12))
 
     def _rebuild(self):
-        for job in (self.progress_job, self.spinner_job, self.idle_job):
+        for job in (self.progress_job, self.spinner_job, self.idle_job, self.logo_job):
             if job is not None:
                 self.root.after_cancel(job)
         self.progress_job = None
         self.spinner_job = None
         self.idle_job = None
+        self.logo_job = None
         self._cancel_reveal()
         for widget in self.root.winfo_children():
             if not isinstance(widget, tk.Toplevel):
