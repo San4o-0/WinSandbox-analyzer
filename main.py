@@ -221,7 +221,7 @@ class SandCheckApp:
             self.progress.pack_forget()
 
         self.choose_btn = tk.Button(
-            parent, text=self.t("choose_file"), command=self._choose_file,
+            parent, text=self._button_label(), command=self._choose_file,
             bg=C["surface"] if self.busy else C["accent"],
             fg=C["muted"] if self.busy else C["on_accent"],
             activebackground=C["accent_dark"], activeforeground=C["on_accent"],
@@ -233,11 +233,12 @@ class SandCheckApp:
         self.choose_btn.pack(fill="x", pady=(12, 0))
         self.choose_btn.bind("<Enter>", self._btn_hover_on)
         self.choose_btn.bind("<Leave>", self._btn_hover_off)
-        bg, fg = self._status_colors()
-        self.status = tk.Label(parent, text=self.t(self.status_key), bg=bg, fg=fg,
-                               font=(UI_FONT, 9, "bold"), justify="center",
-                               wraplength=250, padx=14, pady=5)
-        self.status.pack(pady=(10, 0))
+
+        prefix, color, text = self._status_meta()
+        self.status = tk.Label(parent, bg=C["bg"], anchor="w", justify="left",
+                               wraplength=270, font=(MONO_FONT, 9))
+        self.status.pack(fill="x", pady=(12, 0))
+        self._paint_status(prefix, color, text)
 
         self.file_card = tk.Frame(parent, bg=C["bg"])
         self.file_card.pack(fill="x", pady=(14, 0))
@@ -376,20 +377,14 @@ class SandCheckApp:
         C = self.C
         zone = self.drop_zone
         badge = tk.Canvas(zone, width=44, height=44, bg=C["surface"], highlightthickness=0)
-        badge.create_oval(2, 2, 42, 42, outline=LEVEL_COLORS["clean"], width=2)
-        badge.create_line(14, 23, 20, 29, fill=LEVEL_COLORS["clean"], width=3, capstyle="round")
-        badge.create_line(20, 29, 31, 16, fill=LEVEL_COLORS["clean"], width=3, capstyle="round")
-        badge.pack(pady=(28, 10))
+        badge.create_oval(2, 2, 42, 42, outline=C["prompt"], width=2)
+        badge.create_line(14, 23, 20, 29, fill=C["prompt"], width=3, capstyle="round")
+        badge.create_line(20, 29, 31, 16, fill=C["prompt"], width=3, capstyle="round")
+        badge.pack(pady=(30, 12))
         tk.Label(zone, text=self.t("done_title"), bg=C["surface"], fg=C["text"],
                  font=(UI_FONT, 11, "bold")).pack()
         tk.Label(zone, text=self.t("done_sub"), bg=C["surface"], fg=C["muted"],
-                 font=(UI_FONT, 9), wraplength=250).pack(pady=(4, 10))
-        again = tk.Button(zone, text=self.t("check_another"), command=self._choose_file,
-                          bg=C["surface"], fg=C["accent"], activebackground=C["surface_hover"],
-                          activeforeground=C["accent"], relief="flat", bd=0,
-                          highlightthickness=1, highlightbackground=C["border"],
-                          cursor="hand2", font=(UI_FONT, 9, "bold"), padx=16, pady=6)
-        again.pack(pady=(0, 26))
+                 font=(UI_FONT, 9), wraplength=250).pack(pady=(4, 30))
         if DND_AVAILABLE:
             zone.drop_target_register(DND_FILES)
             zone.dnd_bind("<<Drop>>", self._on_drop)
@@ -675,11 +670,14 @@ class SandCheckApp:
         s = self.current_static
         if not s:
             return
-        box = tk.Frame(self.file_card, bg=C["surface"], highlightthickness=1,
-                       highlightbackground=C["border"])
-        box.pack(fill="x")
-        tk.Label(box, text=self.t("section_file").upper(), bg=C["surface"], fg=C["muted"],
-                 font=(UI_FONT, 8, "bold"), anchor="w").pack(fill="x", padx=14, pady=(12, 6))
+        outer = tk.Frame(self.file_card, bg=C["border"])
+        outer.pack(fill="x")
+        box = tk.Frame(outer, bg=C["surface"])
+        box.pack(fill="both", expand=True, padx=(3, 1), pady=1)
+        tk.Frame(outer, bg=C["muted"], width=3).place(x=0, y=0, relheight=1)
+        tk.Label(box, text="// " + self.t("section_file").lower(), bg=C["surface"],
+                 fg=C["muted"], font=(MONO_FONT, 8, "bold"), anchor="w").pack(
+            fill="x", padx=14, pady=(12, 6))
         rows = [
             _ellipsis(s["file_name"], 30),
             s["detected_type"],
@@ -691,7 +689,7 @@ class SandCheckApp:
                      fg=C["text"] if index == 0 else C["muted"],
                      font=(UI_FONT, 9, "bold" if index == 0 else "normal"),
                      anchor="w").pack(fill="x", padx=14)
-        tk.Label(box, text=s["sha256"][:32] + "…", bg=C["surface"], fg=C["muted"],
+        tk.Label(box, text=s["sha256"][:32] + "…", bg=C["surface"], fg=C["accent"],
                  font=(MONO_FONT, 8), anchor="w").pack(fill="x", padx=14, pady=(6, 12))
 
     def _render_advice_card(self):
@@ -705,9 +703,11 @@ class SandCheckApp:
         outer.pack(fill="x")
         inner = tk.Frame(outer, bg=C["surface"])
         inner.pack(fill="both", expand=True, padx=(3, 1), pady=1)
-        tk.Frame(outer, bg=C["accent"], width=3).place(x=0, y=0, relheight=1)
-        tk.Label(inner, text=self.t("section_advice").upper(), bg=C["surface"], fg=C["muted"],
-                 font=(UI_FONT, 8, "bold"), anchor="w").pack(fill="x", padx=14, pady=(12, 6))
+        edge = LEVEL_COLORS[v["level"]] if v else C["accent"]
+        tk.Frame(outer, bg=edge, width=3).place(x=0, y=0, relheight=1)
+        tk.Label(inner, text="// " + self.t("section_advice").lower(), bg=C["surface"],
+                 fg=edge, font=(MONO_FONT, 8, "bold"), anchor="w").pack(
+            fill="x", padx=14, pady=(12, 6))
         if v:
             text = self.t("advice_" + v["level"], seconds=config.OBSERVE_SECONDS)
             tk.Label(inner, text=text, bg=C["surface"], fg=C["text"], font=(UI_FONT, 9),
@@ -886,17 +886,27 @@ class SandCheckApp:
         online = bool(self.settings.get("online_check"))
         return [step for step in ALL_STEPS if online or not step[2]]
 
-    def _status_colors(self):
+    def _button_label(self):
+        return self.t("check_another") if self.stage == "done" else self.t("choose_file")
+
+    def _status_meta(self):
+        C = self.C
         if self.busy:
-            return self.C["accent"], self.C["on_accent"]
-        return LEVEL_COLORS["clean"], "#06301a"
+            return "[*]", C["accent"], self.t(self.status_key)
+        if self.stage == "done":
+            return "[✓]", C["prompt"], self.t("status_done")
+        return "[+]", C["muted"], self.t("ready")
+
+    def _paint_status(self, prefix, color, text):
+        self.status.config(text=prefix + " " + text, fg=color)
 
     def _set_status(self, key):
         C = self.C
         self.status_key = key
-        bg, fg = self._status_colors()
-        self.status.config(text=self.t(key) if i18n.has(key) else key, bg=bg, fg=fg)
-        self.choose_btn.config(state="disabled" if self.busy else "normal",
+        prefix, color, text = self._status_meta()
+        self._paint_status(prefix, color, text)
+        self.choose_btn.config(text=self._button_label(),
+                               state="disabled" if self.busy else "normal",
                                bg=C["surface"] if self.busy else C["accent"],
                                fg=C["muted"] if self.busy else C["on_accent"],
                                cursor="watch" if self.busy else "hand2")
