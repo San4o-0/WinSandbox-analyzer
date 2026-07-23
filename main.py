@@ -211,17 +211,31 @@ class SandCheckApp:
 
     def _build_left(self, parent):
         C = self.C
-        self.drop_zone = tk.Frame(parent, bg=C["surface"], bd=0, highlightthickness=1,
+        self.left_canvas = tk.Canvas(parent, bg=C["bg"], highlightthickness=0)
+        self.left_scrollbar = ttk.Scrollbar(parent, command=self.left_canvas.yview,
+                                             style="App.Vertical.TScrollbar")
+        _style_scrollbar(parent, C)
+        self.left_canvas.config(yscrollcommand=self.left_scrollbar.set)
+        self.left_canvas.pack(side="left", fill="both", expand=True)
+        host = tk.Frame(self.left_canvas, bg=C["bg"])
+        self.left_window = self.left_canvas.create_window((0, 0), window=host, anchor="nw")
+        host.bind("<Configure>", self._sync_left_scroll)
+        self.left_canvas.bind(
+            "<Configure>",
+            lambda e: self.left_canvas.itemconfig(self.left_window, width=e.width),
+        )
+
+        self.drop_zone = tk.Frame(host, bg=C["surface"], bd=0, highlightthickness=1,
                                   highlightbackground=C["border"], highlightcolor=C["border"])
         self.drop_zone.pack(fill="x")
 
-        self.progress = tk.Canvas(parent, height=3, bg=C["surface"], highlightthickness=0)
+        self.progress = tk.Canvas(host, height=3, bg=C["surface"], highlightthickness=0)
         self.progress.pack(fill="x", pady=(6, 0))
         if not self.busy:
             self.progress.pack_forget()
 
         self.choose_btn = tk.Button(
-            parent, text=self._button_label(), command=self._choose_file,
+            host, text=self._button_label(), command=self._choose_file,
             bg=C["surface"] if self.busy else C["accent"],
             fg=C["muted"] if self.busy else C["on_accent"],
             activebackground=C["accent_dark"], activeforeground=C["on_accent"],
@@ -235,15 +249,25 @@ class SandCheckApp:
         self.choose_btn.bind("<Leave>", self._btn_hover_off)
 
         prefix, color, text = self._status_meta()
-        self.status = tk.Label(parent, bg=C["bg"], anchor="w", justify="left",
-                               wraplength=270, font=(MONO_FONT, 9))
+        self.status = tk.Label(host, bg=C["bg"], anchor="w", justify="left",
+                               wraplength=260, font=(MONO_FONT, 9))
         self.status.pack(fill="x", pady=(12, 0))
         self._paint_status(prefix, color, text)
 
-        self.file_card = tk.Frame(parent, bg=C["bg"])
+        self.file_card = tk.Frame(host, bg=C["bg"])
         self.file_card.pack(fill="x", pady=(14, 0))
-        self.advice_card = tk.Frame(parent, bg=C["bg"])
-        self.advice_card.pack(fill="both", expand=True, pady=(12, 0))
+        self.advice_card = tk.Frame(host, bg=C["bg"])
+        self.advice_card.pack(fill="x", pady=(12, 0))
+
+    def _sync_left_scroll(self, event=None):
+        canvas = self.left_canvas
+        canvas.config(scrollregion=canvas.bbox("all"))
+        need = canvas.bbox("all")[3] > canvas.winfo_height()
+        shown = bool(self.left_scrollbar.winfo_manager())
+        if need and not shown:
+            self.left_scrollbar.pack(side="right", fill="y", before=canvas)
+        elif not need and shown:
+            self.left_scrollbar.pack_forget()
 
     def _build_right(self, parent):
         C = self.C
@@ -288,15 +312,28 @@ class SandCheckApp:
             label.config(wraplength=max(event.width - pad, 120))
 
     def _on_wheel(self, event):
-        if not self.scroll_canvas.winfo_exists():
+        target = self._scroll_target_at(event.x_root, event.y_root)
+        if target is None or not target.winfo_exists():
             return
-        first, last = self.scroll_canvas.yview()
+        first, last = target.yview()
         if first <= 0.0 and last >= 1.0:
             return
         delta = 1 if getattr(event, "num", 0) == 5 else -1 if getattr(event, "num", 0) == 4 else 0
         if delta == 0:
             delta = -1 if event.delta > 0 else 1
-        self.scroll_canvas.yview_scroll(delta, "units")
+        target.yview_scroll(delta, "units")
+
+    def _scroll_target_at(self, x_root, y_root):
+        widget = self.root.winfo_containing(x_root, y_root)
+        canvases = (getattr(self, "left_canvas", None), getattr(self, "scroll_canvas", None))
+        while widget is not None:
+            if widget in canvases:
+                return widget
+            try:
+                widget = widget.nametowidget(widget.winfo_parent())
+            except (KeyError, tk.TclError):
+                return None
+        return None
 
     def _render_zone(self):
         C = self.C
