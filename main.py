@@ -27,30 +27,34 @@ except ImportError:
 
 THEMES = {
     "dark": {
-        "bg": "#0f1115",
-        "surface": "#171a21",
-        "surface_hover": "#1d222c",
-        "chip": "#222732",
-        "border": "#2a2f3a",
-        "accent": "#4f8cff",
-        "accent_dark": "#3d74e0",
-        "text": "#e8ebf1",
-        "muted": "#8b93a3",
-        "report_fg": "#c9d1de",
-        "scroll_active": "#3a4150",
+        "bg": "#0b0d11",
+        "surface": "#14171e",
+        "surface_hover": "#1b1f28",
+        "chip": "#1e2530",
+        "border": "#262b36",
+        "accent": "#22d3ee",
+        "accent_dark": "#0fa9c4",
+        "on_accent": "#04222a",
+        "text": "#e9edf4",
+        "muted": "#7f8a9c",
+        "report_fg": "#c4cedd",
+        "scroll_active": "#39414f",
+        "tint": 0.14,
     },
     "light": {
-        "bg": "#f2f4f8",
+        "bg": "#eef1f6",
         "surface": "#ffffff",
-        "surface_hover": "#f6f8fc",
-        "chip": "#eef1f6",
-        "border": "#d9dee7",
-        "accent": "#3b76e8",
-        "accent_dark": "#2f61c4",
-        "text": "#1a1f29",
-        "muted": "#697182",
-        "report_fg": "#3a4250",
+        "surface_hover": "#f5f8fd",
+        "chip": "#eaeef5",
+        "border": "#d7dde7",
+        "accent": "#0891b2",
+        "accent_dark": "#066e88",
+        "on_accent": "#ffffff",
+        "text": "#151a22",
+        "muted": "#636d7e",
+        "report_fg": "#39424f",
         "scroll_active": "#c3cad6",
+        "tint": 0.08,
     },
 }
 
@@ -183,8 +187,8 @@ class SandCheckApp:
         self.choose_btn = tk.Button(
             parent, text=self.t("choose_file"), command=self._choose_file,
             bg=C["surface"] if self.busy else C["accent"],
-            fg=C["muted"] if self.busy else "#ffffff",
-            activebackground=C["accent_dark"], activeforeground="#ffffff",
+            fg=C["muted"] if self.busy else C["on_accent"],
+            activebackground=C["accent_dark"], activeforeground=C["on_accent"],
             disabledforeground=C["muted"], state="disabled" if self.busy else "normal",
             relief="flat", bd=0, highlightthickness=0,
             cursor="watch" if self.busy else "hand2",
@@ -436,31 +440,46 @@ class SandCheckApp:
         if width <= 1:
             return
         C = self.C
-        canvas.config(bg=C["surface"])
+        height = 104
         v = self.current_verdict
 
         if not v:
-            canvas.create_text(24, 40, text=self.t("awaiting_verdict"), fill=C["muted"],
+            canvas.config(bg=C["surface"])
+            canvas.create_rectangle(0, 0, width, height, fill=C["surface"],
+                                    outline=C["border"])
+            canvas.create_text(24, 44, text=self.t("awaiting_verdict"), fill=C["muted"],
                                font=(UI_FONT, 15, "bold"), anchor="w")
-            canvas.create_text(24, 64, text=self.t("awaiting_sub"), fill=C["muted"],
+            canvas.create_text(24, 68, text=self.t("awaiting_sub"), fill=C["muted"],
                                font=(UI_FONT, 9), anchor="w")
             return
 
         color = LEVEL_COLORS[v["level"]]
-        canvas.create_text(24, 26, text=self.t("verdict_eyebrow"), fill=C["muted"],
+        left = _lerp(color, C["bg"], 0.62)
+        right = C["surface"]
+        steps = max(width // 3, 1)
+        for i in range(steps):
+            x0 = i * width / steps
+            canvas.create_rectangle(x0, 0, x0 + width / steps + 1, height,
+                                    fill=_lerp(left, right, (i / steps) ** 0.7), outline="")
+        canvas.create_rectangle(1, 1, width - 1, height - 1, outline=color, width=1)
+
+        canvas.create_text(24, 28, text=self.t("verdict_eyebrow"), fill=_lerp(color, C["text"], 0.5),
                            font=(UI_FONT, 8, "bold"), anchor="w")
-        canvas.create_text(24, 52, text=self.t("level_" + v["level"]), fill=color,
-                           font=(UI_FONT, 20, "bold"), anchor="w")
-        canvas.create_text(width - 24, 26, text=self.t("score_eyebrow"), fill=C["muted"],
+        canvas.create_text(24, 55, text=self.t("level_" + v["level"]), fill=color,
+                           font=(UI_FONT, 22, "bold"), anchor="w")
+        canvas.create_text(width - 24, 28, text=self.t("score_eyebrow"), fill=C["muted"],
                            font=(UI_FONT, 8, "bold"), anchor="e")
-        canvas.create_text(width - 60, 54, text=str(self.score_shown), fill=C["text"],
-                           font=(UI_FONT, 22, "bold"), anchor="e")
-        canvas.create_text(width - 24, 58, text="/100", fill=C["muted"],
+        canvas.create_text(width - 62, 56, text=str(self.score_shown), fill=C["text"],
+                           font=(UI_FONT, 24, "bold"), anchor="e")
+        canvas.create_text(width - 24, 60, text="/100", fill=C["muted"],
                            font=(UI_FONT, 12), anchor="e")
         track_x0, track_x1 = 24, width - 24
-        canvas.create_rectangle(track_x0, 82, track_x1, 88, fill=C["chip"], outline="")
+        canvas.create_rectangle(track_x0, 84, track_x1, 90, fill=_lerp(C["bg"], color, 0.15),
+                                outline="")
         filled = track_x0 + (track_x1 - track_x0) * self.score_shown / 100
-        canvas.create_rectangle(track_x0, 82, filled, 88, fill=color, outline="")
+        canvas.create_rectangle(track_x0, 84, filled, 90, fill=color, outline="")
+        canvas.create_rectangle(max(filled - 3, track_x0), 84, filled, 90,
+                                fill=_lerp(color, "#ffffff", 0.6), outline="")
 
     def _animate_score(self):
         target = self.current_verdict["score"] if self.current_verdict else 0
@@ -536,26 +555,23 @@ class SandCheckApp:
                          font=(UI_FONT, 8, "bold"), anchor="w")
         self.reveal_queue.append((label, {"fill": "x", "pady": (0 if first else 12, 8)}))
 
+    def _tint(self, accent, strength=1.0):
+        return _lerp(self.C["surface"], accent, self.C["tint"] * strength)
+
     def _card_shell(self, accent):
         C = self.C
-        outer = tk.Frame(self.findings, bg=C["border"])
-        inner = tk.Frame(outer, bg=C["surface"])
-        inner.pack(fill="both", expand=True, padx=(3, 1), pady=1)
-        bar = tk.Frame(outer, bg=accent, width=3)
-        bar.place(x=0, y=0, relheight=1)
+        base = self._tint(accent)
+        edge = _lerp(accent, C["surface"], 0.35)
+        outer = tk.Frame(self.findings, bg=edge)
+        inner = tk.Frame(outer, bg=base)
+        inner.pack(fill="both", expand=True, padx=(4, 1), pady=1)
+        tk.Frame(outer, bg=accent, width=4).place(x=0, y=0, relheight=1)
         self.reveal_queue.append((outer, {"fill": "x", "pady": (0, 10)}))
-        return outer, inner, accent
+        return outer, inner, accent, base
 
-    def _bind_card_hover(self, outer, inner, accent):
-        C = self.C
-        widgets = [inner]
-        stack = [inner]
-        while stack:
-            for child in stack.pop().winfo_children():
-                widgets.append(child)
-                stack.append(child)
+    def _bind_card_hover(self, widgets, base, hover):
         tinted = [w for w in widgets
-                  if isinstance(w, (tk.Frame, tk.Label)) and str(w["bg"]) == C["surface"]]
+                  if isinstance(w, (tk.Frame, tk.Label)) and str(w["bg"]) == base]
 
         def paint(color):
             for widget in tinted:
@@ -563,44 +579,57 @@ class SandCheckApp:
                     widget.config(bg=color)
 
         for widget in widgets:
-            widget.bind("<Enter>", lambda e: paint(C["surface_hover"]), add="+")
-            widget.bind("<Leave>", lambda e: paint(C["surface"]), add="+")
+            widget.bind("<Enter>", lambda e: paint(hover), add="+")
+            widget.bind("<Leave>", lambda e: paint(base), add="+")
+
+    def _all_children(self, root):
+        widgets = [root]
+        stack = [root]
+        while stack:
+            for child in stack.pop().winfo_children():
+                widgets.append(child)
+                stack.append(child)
+        return widgets
 
     def _simple_card(self, text, severity):
         C = self.C
-        outer, inner, accent = self._card_shell(SEVERITY_COLORS[severity])
-        label = tk.Label(inner, text=text, bg=C["surface"], fg=C["text"],
+        accent = SEVERITY_COLORS[severity]
+        outer, inner, accent, base = self._card_shell(accent)
+        label = tk.Label(inner, text=text, bg=base, fg=C["text"],
                          font=(UI_FONT, 10), anchor="w", justify="left")
         label.pack(fill="x", padx=16, pady=14)
         self.wrap_labels.append((label, 60))
-        self._bind_card_hover(outer, inner, accent)
+        self._bind_card_hover(self._all_children(inner), base, self._tint(accent, 1.9))
 
     def _finding_card(self, card):
         C = self.C
         severity = card["severity"]
-        outer, inner, accent = self._card_shell(SEVERITY_COLORS[severity])
+        accent = SEVERITY_COLORS[severity]
+        outer, inner, accent, base = self._card_shell(accent)
+        chip_bg = self._tint(accent, 2.4)
 
-        head = tk.Frame(inner, bg=C["surface"])
+        head = tk.Frame(inner, bg=base)
         head.pack(fill="x", padx=16, pady=(14, 2))
-        tk.Label(head, text=SEVERITY_ICONS[severity], bg=C["surface"], fg=accent,
-                 font=(UI_FONT, 10)).pack(side="left", padx=(0, 8))
-        tk.Label(head, text=self.t(card["key"], **card["params"]), bg=C["surface"],
+        icon = tk.Label(head, text=SEVERITY_ICONS[severity], bg=chip_bg, fg=accent,
+                        font=(UI_FONT, 9, "bold"), width=3, pady=2)
+        icon.pack(side="left", padx=(0, 10))
+        tk.Label(head, text=self.t(card["key"], **card["params"]), bg=base,
                  fg=C["text"], font=(UI_FONT, 10, "bold")).pack(side="left")
 
         desc = tk.Label(inner, text=self.t(card["key"] + "_desc", **card["params"]),
-                        bg=C["surface"], fg=C["muted"], font=(UI_FONT, 9),
+                        bg=base, fg=C["muted"], font=(UI_FONT, 9),
                         anchor="w", justify="left")
-        desc.pack(fill="x", padx=(40, 16), pady=(0, 12))
-        self.wrap_labels.append((desc, 90))
+        desc.pack(fill="x", padx=(46, 16), pady=(2, 12))
+        self.wrap_labels.append((desc, 96))
 
         items = card["params"].get("items")
         if items and card["key"].startswith("cat_"):
-            chips = tk.Frame(inner, bg=C["surface"])
-            chips.pack(fill="x", padx=(40, 16), pady=(0, 14))
+            chips = tk.Frame(inner, bg=base)
+            chips.pack(fill="x", padx=(46, 16), pady=(0, 14))
             for marker in items.split(", ")[:5]:
-                tk.Label(chips, text=marker, bg=C["chip"], fg=C["report_fg"],
+                tk.Label(chips, text=marker, bg=chip_bg, fg=_lerp(accent, C["text"], 0.4),
                          font=(MONO_FONT, 8), padx=7, pady=3).pack(side="left", padx=(0, 6))
-        self._bind_card_hover(outer, inner, accent)
+        self._bind_card_hover(self._all_children(inner), base, self._tint(accent, 1.9))
 
     def _render_file_card(self):
         C = self.C
@@ -711,9 +740,9 @@ class SandCheckApp:
                 tk.Button(row, text=title,
                           command=lambda k=setting_key, v=value: self._set_setting(k, v),
                           bg=C["accent"] if active else C["surface"],
-                          fg="#ffffff" if active else C["text"],
+                          fg=C["on_accent"] if active else C["text"],
                           activebackground=C["accent_dark"] if active else C["surface_hover"],
-                          activeforeground="#ffffff" if active else C["text"],
+                          activeforeground=C["on_accent"] if active else C["text"],
                           relief="flat", bd=0, highlightthickness=1,
                           highlightbackground=C["accent"] if active else C["border"],
                           cursor="hand2",
@@ -736,8 +765,8 @@ class SandCheckApp:
         self.key_entry.insert(0, self.settings.get("vt_key", ""))
         self.key_entry.pack(side="left", fill="x", expand=True, ipady=5)
         tk.Button(entry_row, text=self.t("save_key"), command=self._save_key,
-                  bg=C["accent"], fg="#ffffff", activebackground=C["accent_dark"],
-                  activeforeground="#ffffff", relief="flat", bd=0, highlightthickness=0,
+                  bg=C["accent"], fg=C["on_accent"], activebackground=C["accent_dark"],
+                  activeforeground=C["on_accent"], relief="flat", bd=0, highlightthickness=0,
                   cursor="hand2", font=(UI_FONT, 9, "bold"),
                   padx=14, pady=5).pack(side="left", padx=(8, 0))
         self.key_status = tk.Label(key_row, text="", bg=C["bg"], fg=C["muted"],
@@ -818,7 +847,7 @@ class SandCheckApp:
 
     def _status_colors(self):
         if self.busy:
-            return self.C["accent"], "#ffffff"
+            return self.C["accent"], self.C["on_accent"]
         return LEVEL_COLORS["clean"], "#06301a"
 
     def _set_status(self, key):
@@ -828,7 +857,7 @@ class SandCheckApp:
         self.status.config(text=self.t(key) if i18n.has(key) else key, bg=bg, fg=fg)
         self.choose_btn.config(state="disabled" if self.busy else "normal",
                                bg=C["surface"] if self.busy else C["accent"],
-                               fg=C["muted"] if self.busy else "#ffffff",
+                               fg=C["muted"] if self.busy else C["on_accent"],
                                cursor="watch" if self.busy else "hand2")
 
     def _start_progress(self):
